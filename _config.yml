@@ -1,0 +1,6 @@
+exclude:
+  - raw_data
+  - annotated_data
+  - annotations
+  - labeler
+  - README.md
