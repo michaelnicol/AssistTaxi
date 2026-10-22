@@ -4,3 +4,4 @@ exclude:
   - annotations
   - labeler
   - README.md
+  - experiments
