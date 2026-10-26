@@ -65,7 +65,7 @@ train-venv/bin/python spline_train.py score specs/base/smolvlm2-t5.json test   #
 A grid file expands one base spec into many. Each spec goes to `specs/<grid name>/`, and its path is appended to `output/queue.txt`. The queue then trains each one and scores it on tune and then on test:
 
 ```bash
-train-venv/bin/python spline_queue.py grid specs/grids/lora-vs-tiles.json
+train-venv/bin/python spline_queue.py grid specs/grids/smol-2.2b-rank.json
 tmux new-session -d -s spline-queue -- train-venv/bin/python spline_queue.py
 ```
 

@@ -37,7 +37,6 @@ log = logging.getLogger("spline.data")
 
 LABELS = Path("/home/michaelnicol/github/LLAMAS/labels.zip")
 IMAGES = Path("/home/michaelnicol/github/LLAMAS/color_images")
-SPLIT_NAMES = ("train", "tune", "test")
 SPLIT_SEED = 0
 SPLIT_FRACTIONS = (0.8, 0.1, 0.1)
 # split.json has its own version, separate from the run schema: the photo lists
