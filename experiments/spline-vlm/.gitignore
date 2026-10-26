@@ -1,4 +1,13 @@
-train-venv/
-output/
 __pycache__/
+.venv/
+train-venv/
 *.pyc
+.ruff_cache/
+output/
+mothball/
+checkpoints/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.ckpt

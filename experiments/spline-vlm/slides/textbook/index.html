@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>From one neuron to SmolVLM2: how a language model works</title>
+<style>
+:root {
+  --bg: #101014; --panel: #16161c; --panel2: #1b1b22; --ink: #e8e6e3; --dim: #8d8d97; --faint: #2c2c36;
+  --blue: #58c4dd; --yellow: #ffd75e; --green: #83c167; --red: #fc6255; --purple: #c39ae6; --orange: #f0a35e; --teal: #5cd0b3;
+  --serif: "Latin Modern Roman", "CMU Serif", "Computer Modern", Georgia, "Times New Roman", serif;
+  --sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 19px/1.65 var(--serif); }
+a { color: var(--blue); }
+#progress { position: fixed; top: 0; left: 0; height: 3px; background: var(--yellow); z-index: 10; width: 0; }
+#toc { position: fixed; top: 0; left: 0; bottom: 0; width: 260px; overflow-y: auto; padding: 28px 18px 40px; border-right: 1px solid var(--faint); font: 13px/1.5 var(--sans); background: #0d0d11; }
+#toc h1 { font: 600 15px/1.3 var(--sans); margin: 0 0 14px; color: var(--ink); }
+#toc ul { list-style: none; margin: 0; padding: 0; }
+#toc li a { display: block; color: var(--dim); text-decoration: none; padding: 2px 8px; border-radius: 6px; }
+#toc li a:hover { color: var(--ink); }
+#toc li a.on { color: var(--bg); background: var(--yellow); }
+#toc .toc-part { margin: 14px 0 4px; color: var(--ink); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+main { margin-left: 260px; padding: 48px 56px 120px; }
+.col { max-width: 800px; margin: 0 auto; }
+header.title { max-width: 800px; margin: 0 auto 30px; }
+header.title h1 { font-size: 44px; line-height: 1.15; margin: 0 0 12px; font-weight: 500; }
+header.title p { color: var(--dim); font-size: 20px; margin: 0; }
+h1.part { max-width: 800px; margin: 90px auto 10px; font: 600 14px/1 var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--yellow); border-top: 1px solid var(--faint); padding-top: 28px; }
+h1.part + .partlead { max-width: 800px; margin: 0 auto; color: var(--dim); }
+section { max-width: 800px; margin: 56px auto 0; }
+section h2 { font-size: 32px; font-weight: 500; line-height: 1.2; margin: 0 0 10px; }
+section h2 .n { color: var(--dim); margin-right: 10px; }
+section h3 { font-size: 22px; font-weight: 500; margin: 32px 0 6px; }
+.gist { font-size: 21px; color: var(--ink); border-left: 3px solid var(--yellow); padding: 4px 0 4px 16px; margin: 14px 0 20px; font-style: italic; }
+.meta { font: 13px/1.9 var(--sans); color: var(--dim); margin: 0 0 8px; }
+.meta-k { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; margin-right: 6px; }
+.meta-k:not(:first-child) { margin-left: 4px; display: inline-block; }
+.chip { display: inline-block; padding: 0 9px; border: 1px solid var(--faint); border-radius: 999px; color: var(--ink); text-decoration: none; margin: 2px 2px 2px 0; background: var(--panel); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.chip:hover { border-color: var(--blue); }
+.chip.vid { color: var(--red); }
+.chip.vid i { color: var(--dim); font-style: normal; }
+.def { background: var(--panel); border: 1px solid var(--faint); border-left: 4px solid var(--blue); border-radius: 8px; padding: 12px 18px; margin: 18px 0; }
+.def::before { content: attr(data-term); display: block; font: 600 12px/1.4 var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--blue); margin-bottom: 4px; }
+.def p { margin: 0; }
+.note { background: #1a1811; border: 1px solid #3a3420; border-radius: 8px; padding: 12px 18px; margin: 18px 0; font-size: 17px; }
+.note b:first-child { color: var(--yellow); }
+.recap { background: #121a14; border: 1px solid #24382a; border-radius: 8px; padding: 12px 18px; margin: 22px 0; font-size: 17px; }
+.recap::before { content: "What to keep from this section"; display: block; font: 600 12px/1.4 var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--green); margin-bottom: 4px; }
+.recap ul { margin: 0; padding-left: 20px; }
+a.ref { color: var(--yellow); text-decoration: none; border-bottom: 1px dotted var(--yellow); }
+a.ref.chip { border-bottom: 1px solid var(--faint); color: var(--ink); }
+#tip { position: fixed; z-index: 20; max-width: 330px; background: #202029; border: 1px solid #3a3a46; border-radius: 8px; padding: 10px 12px; font: 13px/1.45 var(--sans); color: var(--ink); pointer-events: none; opacity: 0; transition: opacity .12s; }
+#tip.on { opacity: 1; }
+#tip p { margin: 6px 0 0; color: var(--dim); font-style: italic; }
+code, pre { font-family: var(--mono); font-size: 14px; }
+p code, li code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; }
+pre.code { background: #0c0c10; border: 1px solid var(--faint); border-radius: 8px; padding: 14px 16px; overflow-x: auto; line-height: 1.55; margin: 16px 0; }
+pre.code.small { font-size: 12.5px; }
+pre .cl { display: block; border-radius: 4px; padding: 0 4px; margin: 0 -4px; }
+pre .cl.hov { cursor: pointer; }
+pre .cl.on { background: #2e2a16; color: var(--yellow); }
+.c-red { color: var(--red); } .c-green { color: var(--green); } .c-blue { color: var(--blue); } .c-yellow { color: var(--yellow); }
+.c-purple { color: var(--purple); } .c-orange { color: var(--orange); }
+figure.fig { margin: 28px 0; background: var(--panel); border: 1px solid var(--faint); border-radius: 12px; padding: 18px 20px 14px; }
+figure.fig figcaption { font: 14px/1.5 var(--sans); color: var(--dim); margin-top: 12px; }
+figure.fig figcaption b { color: var(--ink); }
+.fig-svg { width: 100%; height: auto; display: block; font-family: var(--sans); }
+.fig-svg .ax { stroke: #5a5a66; stroke-width: 1.2; }
+.fig-svg .tk { fill: var(--dim); font-size: 12px; }
+.fig-svg .axl { fill: var(--dim); font-size: 12px; font-style: italic; }
+.fig-svg .lbl { fill: var(--ink); font-size: 14px; }
+.fig-svg .val { fill: var(--ink); font-size: 13px; font-family: var(--mono); }
+.tk { color: var(--dim); font: 13px/1.5 var(--sans); }
+.readout { font: 14.5px/1.55 var(--sans); color: var(--ink); background: #111116; border-radius: 8px; padding: 10px 14px; margin-top: 10px; min-height: 2.4em; }
+.readout b { font-family: var(--mono); font-weight: 600; font-size: 13.5px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin-top: 12px; font: 13px/1.3 var(--sans); }
+.slider { display: flex; align-items: center; gap: 8px; color: var(--dim); }
+.slider input[type=range] { width: 130px; accent-color: var(--yellow); }
+.slider output { font-family: var(--mono); color: var(--ink); min-width: 44px; }
+.slider select { background: var(--panel2); color: var(--ink); border: 1px solid var(--faint); border-radius: 6px; padding: 4px 6px; font: inherit; }
+button { font: 13px/1 var(--sans); background: var(--panel2); color: var(--ink); border: 1px solid #3a3a46; border-radius: 7px; padding: 8px 12px; cursor: pointer; }
+button:hover { border-color: var(--dim); }
+button.primary { background: #2e2a16; border-color: #6d5e25; color: var(--yellow); }
+button.on { background: var(--yellow); color: var(--bg); border-color: var(--yellow); }
+button:disabled { opacity: .35; cursor: default; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.count { color: var(--dim); }
+.mathline { font: 15px/1.4 var(--mono); text-align: center; margin: 8px 0; }
+.mat { display: inline-block; vertical-align: middle; border-left: 2px solid var(--dim); border-right: 2px solid var(--dim); border-radius: 6px; padding: 2px 8px; margin: 0 4px; }
+.calc div { margin: 3px 0; }
+table.mtx { border-collapse: collapse; font: 12.5px/1.3 var(--mono); margin: 6px; }
+table.mtx caption { font: 12px/1.4 var(--sans); color: var(--dim); caption-side: top; text-align: left; padding-bottom: 4px; }
+table.mtx td, table.mtx th { padding: 4px 7px; text-align: right; border: 1px solid #22222a; }
+table.mtx th { color: var(--dim); font-weight: 400; font-family: var(--sans); }
+table.mtx tr.hl th:first-child { color: var(--yellow); }
+table.mtx tr.hl td { outline: 1px solid var(--yellow); outline-offset: -1px; }
+table.mtx td.masked { color: #555; background: #0c0c10; }
+table.sens { margin: 10px auto 0; }
+.sa { display: flex; flex-wrap: wrap; justify-content: center; }
+.cnn { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; align-items: flex-start; }
+.cnn-col { text-align: center; }
+.cnn-t { font: 12px/1.4 var(--sans); color: var(--dim); margin-bottom: 6px; }
+.cnn-grid { display: grid; gap: 2px; }
+.cnn-grid .cell { background: #1e1e26; border-radius: 3px; display: flex; align-items: center; justify-content: center; font: 12px var(--mono); color: var(--ink); cursor: pointer; }
+.g6 .cell, .g3 .cell { width: 26px; height: 26px; }
+.g4 .cell { width: 30px; height: 30px; }
+.g2 .cell { width: 36px; height: 36px; }
+.cnn-grid .cell.on { background: var(--ink); }
+.g3 .cell.on { background: var(--blue); }
+.cnn-grid .cell.hl { outline: 2px solid var(--yellow); }
+.tf { display: grid; grid-template-columns: 240px 1fr; gap: 20px; align-items: start; }
+.tf-stack { display: flex; flex-direction: column-reverse; gap: 6px; }
+.tf-loop { display: flex; flex-direction: column-reverse; gap: 6px; border: 1px dashed #4a4a56; border-radius: 10px; padding: 8px; position: relative; }
+.tf-x { font: 12px var(--sans); color: var(--dim); text-align: right; }
+.tf-b { width: 100%; text-align: left; padding: 10px 12px; }
+.tf-att, .tf-ffn { border-color: var(--blue); }
+.tf-res1, .tf-res2 { border-color: var(--green); }
+.tf-info { background: #111116; border-radius: 10px; padding: 14px 18px; font: 15px/1.6 var(--sans); }
+.tf-info h4 { margin: 0 0 6px; font-size: 17px; color: var(--yellow); }
+.tf-info p { margin: 0 0 8px; }
+.gen { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.tokstrip { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; font: 14px var(--mono); }
+.tok { background: var(--panel2); border: 1px solid #33333d; border-radius: 6px; padding: 5px 9px; display: inline-flex; flex-direction: column; align-items: center; white-space: pre; }
+.tok.gen { border-color: var(--yellow); color: var(--yellow); }
+.tok small { font-size: 11px; color: var(--dim); margin-top: 2px; }
+.tok.a { border-color: var(--green); color: var(--green); }
+.tok.a small { color: var(--green); }
+.tok.img { border-color: var(--teal); color: var(--teal); }
+.tri { display: grid; gap: 2px; max-width: 260px; }
+.tc { aspect-ratio: 1; border-radius: 3px; font: 12px var(--sans); display: flex; align-items: center; justify-content: center; }
+.tc.on { background: #22414b; }
+.tc.on.last { background: var(--blue); }
+.tc.off { background: #0c0c10; color: #444; }
+.bars, .rag-list { font: 13px/1.3 var(--sans); }
+.bar { display: grid; grid-template-columns: minmax(120px, 230px) 1fr 110px; gap: 10px; align-items: center; margin: 6px 0; }
+.bar i { display: block; height: 14px; background: var(--blue); border-radius: 3px; justify-self: start; }
+.bar b { font-family: var(--mono); font-weight: 400; text-align: right; }
+.bar.top span { color: var(--yellow); }
+.bar.top i { background: var(--yellow); }
+.pipe { display: flex; gap: 6px; flex-wrap: wrap; }
+.pipe-s { flex: 1 1 110px; text-align: center; padding: 10px 6px; border-radius: 8px; background: var(--panel2); border: 1px solid #33333d; font: 13px/1.3 var(--sans); color: var(--dim); }
+.pipe-s.done { color: var(--ink); border-color: #3e5a44; }
+.pipe-s.on { color: var(--bg); background: var(--yellow); border-color: var(--yellow); }
+.tl { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: center; }
+.tl pre.code { margin: 0; }
+.tl.one { grid-template-columns: 1fr; }
+.ring { position: relative; aspect-ratio: 1; max-width: 340px; width: 100%; justify-self: center; border-radius: 50%; border: 2px dashed #3a3a46; }
+.ring-n { position: absolute; transform: translate(-50%, -50%); background: var(--panel2); border: 1px solid #3a3a46; border-radius: 8px; padding: 6px 9px; font: 12.5px var(--sans); cursor: pointer; white-space: nowrap; }
+.ring-n.on { background: var(--yellow); color: var(--bg); border-color: var(--yellow); }
+.patch { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; justify-content: center; }
+.patch-side { flex: 1 1 200px; display: flex; flex-direction: column; gap: 10px; }
+.fig-canvas { max-width: 100%; height: auto; border-radius: 6px; display: block; }
+.fig-canvas.pix { image-rendering: pixelated; width: 140px; border: 2px solid var(--yellow); }
+.patch textarea { width: 100%; background: #0c0c10; color: var(--ink); border: 1px solid #33333d; border-radius: 6px; font: 13px/1.5 var(--mono); padding: 8px; resize: vertical; }
+.tiles { display: flex; justify-content: center; }
+.lora { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px; }
+.lora-p { text-align: center; }
+.lora .op { font: 28px var(--sans); color: var(--dim); }
+.mapn rect { fill: var(--panel2); stroke: #3a3a46; }
+.mapn text { fill: var(--ink); font-size: 12px; }
+.mapn { cursor: pointer; transition: opacity .15s; }
+.mapn:hover rect { stroke: var(--yellow); }
+.mapn.dim { opacity: .25; }
+.mape { fill: none; stroke: #2a2a33; stroke-width: 1; }
+.mape.on { stroke: var(--yellow); stroke-width: 2; }
+table.vids { width: 100%; border-collapse: collapse; font: 14px/1.4 var(--sans); }
+table.vids td, table.vids th { border-bottom: 1px solid var(--faint); padding: 6px 8px; text-align: left; vertical-align: top; }
+table.vids th { color: var(--dim); font-weight: 500; }
+dl.gloss { font-size: 17px; }
+dl.gloss dt { font-weight: 600; margin-top: 12px; }
+dl.gloss dt a:first-child { color: var(--ink); text-decoration: none; }
+dl.gloss dd { margin: 2px 0 0 0; color: #c8c6c2; }
+.num { font-family: var(--mono); font-size: 16px; }
+@media (max-width: 1100px) {
+  #toc { display: none; }
+  main { margin-left: 0; padding: 28px 18px 80px; }
+  figure.fig { margin: 24px 0; padding: 14px 12px; }
+  .tf, .tl, .gen { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<div id="tip"></div>
+<nav id="toc"><h1>One neuron to SmolVLM2</h1><ul id="toc-list"></ul></nav>
+<main>
+
+<header class="title">
+  <h1>From one neuron to SmolVLM2</h1>
+  <p>A step-by-step textbook on how a language model works, built from first principles, with every piece defined before it is used. It follows the 33 videos of StatQuest's <a href="https://www.youtube.com/playlist?list=PLblh5JKOoLUIxGDQs4LFFD--41Vzf-ME1" target="_blank" rel="noopener">Neural Networks / Deep Learning</a> playlist, then shows where vision-language models, SmolVLM2 and LoRA fit in our spline experiment.</p>
+</header>
+
+<h1 class="part" data-part-title="0">Before you start</h1>
+
+<section id="s0" data-part="0" data-short="Map">
+  <h2><span class="n">§0</span>How to read this</h2>
+  <p class="gist">Every idea here is built out of earlier ones, so the book is a chain: read it in order, and follow a yellow link whenever a word feels unfamiliar.</p>
+  <p>You know calculus through several variables, so you already have the two tools that matter most: a slope tells you how much an output moves when you nudge an input, and you can follow a slope through a chain of functions. Almost everything in a large language model is those two ideas applied to very large tables of numbers. This book never asks you to accept a formula. Each piece is introduced as an answer to a problem the previous piece could not solve.</p>
+  <p>Conventions used throughout:</p>
+  <ul>
+    <li>A <b>blue box</b> defines a term. Every defined term is collected in the glossary at the end (<a class="ref" href="#s32">§32</a>).</li>
+    <li><a class="ref" href="#s2">Yellow links</a> point back to the section where an idea was introduced. Hover one to see its one-sentence summary.</li>
+    <li>Each section opens with chips: <b>Builds on</b> lists the sections you need, and <span class="c-red">▶</span> links the StatQuest video that covers the same ground.</li>
+    <li>In the figures, <span class="c-blue">blue</span> is a weight or a quantity being computed, <span class="c-yellow">yellow</span> is what to watch, <span class="c-green">green</span> is the right answer, and <span class="c-red">red</span> is an error.</li>
+  </ul>
+  <p>The map below shows the whole book. Point at any section to light up everything it depends on.</p>
+  <figure class="fig" data-fig="map"><figcaption>The dependency map. Each row is one part of the book, and each line means "this section uses that one". Click a section to jump to it.</figcaption></figure>
+  <p>The destination is concrete. By <a class="ref" href="#s28">§28</a> you will be able to say what every one of SmolVLM2's 2,246,784,880 numbers does when it reads one photo of a taxiway and writes a list of lane curves. By <a class="ref" href="#s29">§29</a> you will know why LoRA can change that behaviour by training only 6,291,456 new numbers.</p>
+</section>
+
+<h1 class="part" data-part-title="I">Part I · The neuron</h1>
+<p class="partlead">What a neural network is: a machine that bends straight lines into curves, one neuron at a time.</p>
+
+<section id="s1" data-part="I" data-short="Why bend" data-videos="1">
+  <h2><span class="n">§1</span>A neural network is a curve-fitting machine</h2>
+  <p class="gist">A neural network takes numbers in and gives numbers out, and training shapes the curve between them to pass through the examples you care about.</p>
+  <p>Start with a small problem. A drug is tested at three doses: low, medium and high. Only the medium dose works. Plot dose on the horizontal axis and effectiveness on the vertical axis, and you get three points: (0, 0), (0.5, 1) and (1, 0).</p>
+  <p>Suppose you want a rule that predicts effectiveness from dose. The simplest rule is a straight line, but no straight line goes up and then down. The best one is a flat line at one third, which is wrong everywhere. You need a rule that can <em>bend</em>.</p>
+  <figure class="fig" data-fig="bend"><figcaption>Three drug trials. A straight line cannot pass through them; the network from §2 can. Switch between the two.</figcaption></figure>
+  <div class="def" id="def-network" data-term="Neural network"><p>A function built by chaining many small, identical pieces (neurons), each of which multiplies, adds and bends. The numbers inside the pieces are adjustable, and adjusting them changes the shape of the whole function.</p></div>
+  <p>That is the entire idea. A language model is the same kind of function. Its input is a list of numbers that stands for some text. Its output is a list of numbers that says how likely each possible next word is. It has billions of adjustable numbers instead of seven. The rest of this book explains what the pieces are, how the numbers get adjusted, and how text and pictures become numbers in the first place.</p>
+  <div class="recap"><ul><li>A network is a function from numbers to numbers with adjustable numbers inside.</li><li>We want functions that can bend, because real relationships are rarely straight lines.</li></ul></div>
+</section>
+
+<section id="s2" data-part="I" data-short="Neuron" data-builds="s1" data-videos="2">
+  <h2><span class="n">§2</span>One neuron: weigh, shift, bend</h2>
+  <p class="gist">A neuron multiplies its input by a weight, adds a bias, and passes the result through a fixed bending function; adding a few bent pieces together makes any squiggle you like.</p>
+  <p>A neuron does three things in order:</p>
+  <ol>
+    <li><b>Weigh.</b> Multiply the input by a number called the <em>weight</em>. This stretches or flips the input.</li>
+    <li><b>Shift.</b> Add a number called the <em>bias</em>. This slides the result up or down.</li>
+    <li><b>Bend.</b> Pass the result through a fixed curve called the <em>activation function</em>.</li>
+  </ol>
+  <p>The first two steps alone give a straight line, w × x + b. Stacking straight lines only ever gives another straight line, because a line of a line is still a line. The bend is what breaks this. Without it, a billion-weight network would be no more expressive than one line.</p>
+  <div class="def" id="def-weight" data-term="Weight"><p>A number that multiplies a value as it passes along a connection. Weights are the adjustable numbers a network learns.</p></div>
+  <div class="def" id="def-bias" data-term="Bias"><p>A number added after the weighting. It shifts where the bend happens. Biases are also learned.</p></div>
+  <div class="def" id="def-activation" data-term="Activation function"><p>A fixed curve applied after weigh-and-shift so that the network can bend. Soft plus (log(1 + eˣ)), ReLU (max(0, x)) and sigmoid (1 / (1 + e⁻ˣ)) are common choices.</p></div>
+  <figure class="fig" data-fig="neuron"><figcaption>One neuron. The dashed blue line is weigh-and-shift, a straight line. The yellow curve is what comes out after the bend. Change the bend to see the three common shapes.</figcaption></figure>
+  <h3>Several neurons make a squiggle</h3>
+  <p>Now give the dose to two neurons at once. Each one has its own weight and bias, so each produces its own bent curve. Multiply each curve by one more weight, add them together, and add a final bias. That sum is the network's output.</p>
+  <p>The figure below is the exact network from the StatQuest video, with the values it found after training: w1 = 3.34, b1 = −1.43, w2 = −3.53, b2 = 0.57, w3 = −1.22, w4 = −2.30, b3 = 2.61, using soft plus. The <span class="c-blue">upper path</span> makes one bent curve and the <span class="c-orange">lower path</span> makes another. Their sum, plus b3, is the <span class="c-yellow">output</span>, and it passes through all three green points.</p>
+  <figure class="fig" data-fig="dosage" data-act="softplus" data-preset="statquest"><figcaption>The dose network. Line thickness shows the size of each weight; red means negative. Move any slider and watch which part of the output changes. The readout adds up the squared misses, which §5 will use to measure how wrong the network is.</figcaption></figure>
+  <div class="def" id="def-layer" data-term="Layer"><p>A group of neurons that all read the same inputs. The two middle neurons here form a hidden layer, called hidden because you only see its effect through the output.</p></div>
+  <p>This is the most important picture in the book. A transformer's "feed-forward" block (<a class="ref" href="#s18">§18</a>) is this same picture with 2,048 inputs, 8,192 middle neurons and 2,048 outputs.</p>
+  <div class="recap"><ul><li>Neuron = weigh, shift, bend.</li><li>Many bent curves, scaled and added, can make almost any shape.</li><li>The network's knowledge lives in its weights and biases.</li></ul></div>
+</section>
+
+<section id="s3" data-part="I" data-short="ReLU" data-builds="s2" data-videos="8">
+  <h2><span class="n">§3</span>ReLU: the simplest bend</h2>
+  <p class="gist">ReLU outputs zero for negative inputs and passes positive inputs through unchanged; it is cheap, its slope is easy, and it works as well as smooth bends.</p>
+  <div class="def" id="def-relu" data-term="ReLU"><p>Rectified linear unit: max(0, x). Below zero it is flat at zero; above zero it is the identity. Its slope is 0 on the left and 1 on the right.</p></div>
+  <p>Soft plus is smooth, but most modern networks prefer sharper bends because they are cheaper to compute and their slopes are simple. With ReLU, each neuron draws a line that is flat until a corner and then straight. Add a few of these and you get a curve made of straight pieces with corners.</p>
+  <p>Below, the same network shape as <a class="ref" href="#s2">§2</a> uses ReLU with a hand-built set of numbers. The upper path rises as 2 × dose. The lower path stays at zero until dose 0.5, then rises twice as fast, and it is subtracted. Rise, then fall: a tent that hits all three points.</p>
+  <figure class="fig" data-fig="dosage" data-act="relu" data-preset="relu"><figcaption>The dose network with ReLU. The corners are where each neuron's weighted input crosses zero. Moving b2 slides the second corner along the dose axis.</figcaption></figure>
+  <p>SmolVLM2's language model uses a smooth relative of ReLU called SiLU (x × sigmoid(x)). Its vision side uses GELU, another smooth ReLU. The reason for the choice is the same: a mostly straight bend with a well-behaved slope. You will meet SiLU again in <a class="ref" href="#s18">§18</a>.</p>
+</section>
+
+<h1 class="part" data-part-title="II">Part II · Learning</h1>
+<p class="partlead">How a network finds its weights: measure the miss, find the slope of the miss for every weight, and step downhill.</p>
+
+<section id="s4" data-part="II" data-short="Chain rule" data-builds="s1" data-videos="3">
+  <h2><span class="n">§4</span>The chain rule: slopes multiply along a chain</h2>
+  <p class="gist">If A affects B and B affects C, then the slope of C with respect to A is the slope of B with respect to A times the slope of C with respect to B.</p>
+  <p>You know this from calculus; here is why it matters. A network is a long chain: the input feeds a neuron, which feeds another neuron, which feeds the output, which feeds the error. To improve one weight deep inside, we need to know how much the final error moves when that weight moves. We cannot read that slope off directly, but we can multiply the slopes of each link.</p>
+  <p>StatQuest's example: weight predicts height, and height predicts shoe size. In the figure's starting position, height rises 0.86 per unit of weight, and shoe size rises 1.93 per unit of height, so shoe size rises 0.86 × 1.93 ≈ 1.66 per unit of weight. The figure shows both links with their tangent lines and checks the product against an actual small nudge.</p>
+  <figure class="fig" data-fig="chain"><figcaption>Two links of a chain. The output of the left plot (height) is the input of the right plot. The yellow tangent lines are the local slopes, and their product predicts how a small nudge in weight moves shoe size.</figcaption></figure>
+  <div class="def" id="def-slope" data-term="Slope (derivative)"><p>How much an output moves per unit of a small nudge to one input, holding everything else still. When there are many inputs, this is the partial derivative with respect to that one input.</p></div>
+  <div class="def" id="def-chain" data-term="Chain rule"><p>Along a chain of steps, the overall slope is the product of the slopes of each step. When one value affects the output along several paths, add the products for each path.</p></div>
+  <p>The second sentence of that definition is the one networks use most. In <a class="ref" href="#s2">§2</a>, the dose reaches the output through two paths, upper and lower, so its total effect is the sum of the two path products.</p>
+</section>
+
+<section id="s5" data-part="II" data-short="Gradient descent" data-builds="s4" data-videos="4">
+  <h2><span class="n">§5</span>Gradient descent: walk downhill on the error</h2>
+  <p class="gist">Measure how wrong the model is with one number, find the slope of that number with respect to each adjustable value, and take a small step in the downhill direction; repeat until the slope is nearly zero.</p>
+  <p>First we need a single number that says how wrong a model is. The common choice for numeric predictions is to take each miss (observed minus predicted), square it so that misses in both directions count and big misses count extra, and add them up.</p>
+  <div class="def" id="def-loss" data-term="Loss"><p>One number measuring how wrong the model is on the training examples. Training means making it small. The sum of squared misses is one loss; cross entropy (§9) is another.</p></div>
+  <p>Take StatQuest's example: three people with weight and height (0.5, 1.4), (2.3, 1.9) and (2.9, 3.2). Fix the slope of the line at 0.64 and look for the best intercept. Each choice of intercept gives one total miss, so the total miss is a curve over intercepts. We want its lowest point.</p>
+  <p>You could set the derivative to zero and solve, but in a network with billions of weights there is no equation to solve. Instead, stand anywhere, measure the slope of the miss curve, and step against it. A steep slope means you are far from the bottom, so you take a big step. A shallow slope means you are close, so you take a small one. The step is the slope times a small number called the learning rate.</p>
+  <figure class="fig" data-fig="gd"><figcaption>Left: the data, the current line and the misses in red. Right: total miss as a function of the intercept, with its tangent at the current intercept. Each step moves by slope × learning rate. Try a learning rate of 0.5 to see overshooting.</figcaption></figure>
+  <div class="def" id="def-lr" data-term="Learning rate"><p>The number that turns a slope into a step size. Too small and training crawls; too large and each step overshoots the bottom.</p></div>
+  <div class="def" id="def-gd" data-term="Gradient descent"><p>Repeatedly change every adjustable value by minus learning rate times its slope of the loss. The list of all those slopes is called the gradient; it points straight uphill, so we step the other way.</p></div>
+  <p>With two unknowns, intercept and slope, the miss becomes a surface over a plane, the same kind of surface you drew in Calc 3. The gradient is the vector of the two partial derivatives, and it points straight uphill. Gradient descent rolls a ball down the valley.</p>
+  <figure class="fig" data-fig="gd2"><figcaption>The total miss over every (intercept, slope) pair, brighter where it is lower. Click to place the ball, then roll it downhill. The valley is long and narrow, so the path first drops across it and then creeps along it.</figcaption></figure>
+  <p>That narrow valley is typical. Real training uses refinements of this walk; the most common, Adam, keeps a running average of each weight's past slopes so that it moves steadily along narrow valleys. The core idea never changes.</p>
+  <div class="recap"><ul><li>Loss: one number for "how wrong".</li><li>Gradient: the slope of the loss for every adjustable value.</li><li>Step: every value −= learning rate × its slope. Repeat.</li></ul></div>
+</section>
+
+<section id="s6" data-part="II" data-short="Backpropagation" data-builds="s2 s3 s4 s5" data-videos="5 6 7">
+  <h2><span class="n">§6</span>Backpropagation: the chain rule, run backwards through a network</h2>
+  <p class="gist">Backpropagation computes the slope of the loss for every weight at once by starting at the loss and multiplying slopes backwards through the network, reusing each partial product.</p>
+  <p>Now put <a class="ref" href="#s4">§4</a> and <a class="ref" href="#s5">§5</a> together on the dose network from <a class="ref" href="#s2">§2</a>. The loss is the sum of squared misses over the three doses. We want its slope with respect to each of the seven numbers.</p>
+  <h3>Start at the end: b3</h3>
+  <p>The final bias b3 is added straight onto the output, so nudging b3 by a small amount moves every prediction by the same amount. The slope of one squared miss, (observed − predicted)², with respect to the prediction is −2 × (observed − predicted). Chain the two links together and the slope of the loss with respect to b3 is the sum over all examples of −2 × miss. The first backpropagation video (video 5) sets b3 to zero, keeps the other six at their trained values, and walks b3 downhill. It lands on 2.61.</p>
+  <h3>Then everything else</h3>
+  <p>For w3, one more link appears: the output moves by (upper neuron's value) per unit of w3. For w1, the chain is longer: loss → output → w3 → the bend's slope → dose. Each weight's slope is the product along its path back to the loss. The early part of every path, "how the loss moves with the output", is shared, so it is computed once and passed backwards. That reuse is what makes backpropagation fast.</p>
+  <div class="def" id="def-backprop" data-term="Backpropagation"><p>Computing every weight's slope of the loss by applying the chain rule from the loss backwards, layer by layer, and reusing each shared partial product. It costs about as much as one more forward pass.</p></div>
+  <figure class="fig" data-fig="backprop"><figcaption>Training the dose network. In the "only b3" mode, the other six numbers are fixed at their trained values and b3 walks from 0 to 2.61. In the "all seven" mode, every number starts elsewhere and all are trained together; the bars show each number's downhill push at the current step.</figcaption></figure>
+  <p>Notice that the "all seven" run settles on different numbers from StatQuest's (w1 ends near 3.26 rather than 3.34) but fits the points just as well. Many weight settings make the same curve. Large models rely on this: there are many good solutions, and gradient descent only has to find one of them.</p>
+  <div class="def" id="def-forward" data-term="Forward pass"><p>Running inputs through the network to get outputs and the loss. The backward pass then runs backpropagation to get slopes.</p></div>
+  <div class="recap"><ul><li>Forward pass: compute the output and loss.</li><li>Backward pass: multiply slopes from the loss back to every weight.</li><li>Step: gradient descent with those slopes. This is all of training, at any size.</li></ul></div>
+</section>
+
+<h1 class="part" data-part-title="III">Part III · Choosing among many answers</h1>
+<p class="partlead">Language models pick a next word out of tens of thousands. This part builds the machinery: many outputs, SoftMax and cross entropy.</p>
+
+<section id="s7" data-part="III" data-short="Many in, many out" data-builds="s3 s6" data-videos="9">
+  <h2><span class="n">§7</span>Many inputs, many outputs</h2>
+  <p class="gist">With two inputs, each neuron's weighted sum is a tilted plane, its bend folds that plane, and each output adds folded planes into its own surface; the biggest output wins.</p>
+  <p>StatQuest uses the iris flower data: from petal width and sepal width, predict which of three species a flower is. Now each hidden neuron has one weight per input. Its weigh-and-shift is w × petal + w′ × sepal + b, a tilted plane over the input square. ReLU folds that plane flat along a line.</p>
+  <p>Each of the three outputs gets its own weights on the hidden neurons, so each output is its own surface built from the same folded planes. For any flower we read the three outputs and pick the biggest.</p>
+  <figure class="fig" data-fig="iris"><figcaption>A two-input, two-hidden-neuron, three-output network with hand-set weights. The colour shows which output is biggest at each point. Switch to the hidden neurons to see each folded plane. Drag to read the three raw scores at any point.</figcaption></figure>
+  <div class="def" id="def-fc" data-term="Fully connected layer"><p>A layer in which every output is a weighted sum of every input, plus a bias. With n inputs and m outputs it has n × m weights, and that grid of weights is a table (matrix, §17).</p></div>
+  <p>This is the moment a network becomes a sequence of tables. Two inputs times two hidden neurons is a 2 × 2 table of weights; two hidden neurons times three outputs is a 2 × 3 table. SmolVLM2 is mostly tables like these, just with thousands of rows.</p>
+</section>
+
+<section id="s8" data-part="III" data-short="SoftMax" data-builds="s7" data-videos="10 11">
+  <h2><span class="n">§8</span>ArgMax and SoftMax: from raw scores to probabilities</h2>
+  <p class="gist">SoftMax exponentiates each raw score and divides by the total, giving positive numbers that add to one, keep the ranking, and, unlike ArgMax, have a useful slope.</p>
+  <p>Raw outputs can be any numbers: 1.43, −0.40, 0.23. We want to say "this is 68% setosa".</p>
+  <p><b>ArgMax</b> sets the biggest to 1 and the others to 0. That is fine for a final decision, but it is useless for learning: nudge a raw score slightly and ArgMax does not change at all, so its slope is zero (<a class="ref" href="#s4">§4</a>) and backpropagation has nothing to multiply.</p>
+  <div class="def" id="def-softmax" data-term="SoftMax"><p>Turn raw scores z₁…zₙ into probabilities: pᵢ = e^zᵢ ÷ (e^z₁ + … + e^zₙ). Each pᵢ is between 0 and 1, they add to 1, and a bigger score always gets a bigger probability.</p></div>
+  <p>Exponentiating makes everything positive and stretches gaps: a score two higher becomes e² ≈ 7.4 times as likely. Adding the same number to every score changes nothing, because it multiplies the top and the bottom by the same amount.</p>
+  <figure class="fig" data-fig="softmax"><figcaption>Three raw scores, then ArgMax and SoftMax. The table shows SoftMax's slopes: nudging a score up raises its own probability by p(1 − p) and lowers each other probability by p × p′.</figcaption></figure>
+  <h3>The slope of SoftMax</h3>
+  <p>Video 11 works out the derivative. Its result fits in one sentence: if you nudge score i up, pᵢ rises by pᵢ(1 − pᵢ) per unit, and every other pⱼ falls by pᵢ × pⱼ per unit. Because probabilities must still add to one, what one gains the others lose. The table in the figure is exactly these numbers.</p>
+  <p>A language model ends in a SoftMax over its whole vocabulary: 49,280 entries for SmolVLM2. The next word is drawn from those probabilities (<a class="ref" href="#s20">§20</a>).</p>
+</section>
+
+<section id="s9" data-part="III" data-short="Cross entropy" data-builds="s8 s4 s6" data-videos="12 13">
+  <h2><span class="n">§9</span>Cross entropy: the loss for choosing</h2>
+  <p class="gist">Cross entropy is minus the log of the probability given to the right answer, and its slope with respect to each raw score is simply the probability minus the target.</p>
+  <p>For choosing among classes we need a different loss from squared misses. The natural question is: what probability did the model give to the answer that was actually right? If it gave 1, it was perfect. If it gave 0.01, it was badly wrong.</p>
+  <div class="def" id="def-xent" data-term="Cross entropy"><p>For one example, the loss is −log(probability the model gave to the correct class). It is 0 when that probability is 1 and grows without limit as it approaches 0.</p></div>
+  <p>The log curve punishes confident mistakes far more than squared misses would. Going from probability 0.5 to 0.01 raises the loss from 0.69 to 4.6, so the slope is steep exactly where the model is most wrong, and learning is fastest there.</p>
+  <h3>The slope is "probability minus target"</h3>
+  <p>Chain the slope of −log p (<a class="ref" href="#s4">§4</a>) with the slope of SoftMax (<a class="ref" href="#s8">§8</a>), and nearly everything cancels. The slope of the loss with respect to raw score i is pᵢ − targetᵢ, where the target is 1 for the right class and 0 for the others. The right class is pushed up by 1 − p and each wrong class is pushed down by its own probability. This tiny result is the start of backpropagation (<a class="ref" href="#s6">§6</a>) in every language model.</p>
+  <figure class="fig" data-fig="xent"><figcaption>Left: the loss curve −log p and where the current right answer sits on it. Right: the push on each raw score, probability minus target. "Take one learning step" moves each score against its push and shows the loss falling.</figcaption></figure>
+  <div class="note"><b>Where this shows up later.</b> SmolVLM2 is trained with exactly this loss at every position of the answer: the right answer is the next token of our lane text, out of 49,280 possibilities. Positions in the prompt are skipped (§28).</div>
+</section>
+
+<h1 class="part" data-part-title="IV">Part IV · Structure: pictures and sequences</h1>
+<p class="partlead">Plain layers treat every input separately. Pictures have neighbours and sentences have an order. These networks build that structure in.</p>
+
+<section id="s10" data-part="IV" data-short="CNN" data-builds="s7 s3" data-videos="14">
+  <h2><span class="n">§10</span>Convolutional networks: one small stencil slid across a picture</h2>
+  <p class="gist">A convolution slides one small grid of weights over every position of an image, so the same feature detector is reused everywhere and the network does not have to relearn it for each pixel.</p>
+  <p>A 6 × 6 black-and-white picture is 36 numbers. You could feed them to a fully connected layer (<a class="ref" href="#s7">§7</a>), but that layer would have to learn "diagonal stroke" separately for every location, and shifting the picture by one pixel would look like an entirely new input.</p>
+  <div class="def" id="def-filter" data-term="Filter (kernel)"><p>A small grid of weights, for example 3 × 3. Laid on a patch of the image, it multiplies cell by cell and adds, giving one number that is large when the patch looks like the filter.</p></div>
+  <div class="def" id="def-conv" data-term="Convolution"><p>Sliding one filter over every position of the image and recording its output at each position, giving a feature map. The filter's weights are shared by every position.</p></div>
+  <div class="def" id="def-pool" data-term="Max pooling"><p>Shrinking a feature map by keeping only the largest value in each small block, for example each 2 × 2. It keeps "the feature appeared around here" and drops the exact position.</p></div>
+  <p>StatQuest's example classifies a 6 × 6 picture as X or O: filter, add bias, ReLU (<a class="ref" href="#s3">§3</a>), max-pool, then a small fully connected network. Click the cells below to draw your own picture.</p>
+  <figure class="fig" data-fig="cnn"><figcaption>A 3 × 3 diagonal filter on a 6 × 6 picture. Point at any feature-map cell to see the window it came from. Try "X moved one cell": the strong responses move with the stroke, and after pooling the top-left and bottom-right corners still report the diagonal. Try O: this filter finds nothing in it.</figcaption></figure>
+  <p>Hold on to the idea of cutting a picture into a grid and applying the same weights to every cell. A vision transformer (<a class="ref" href="#s27">§27</a>) cuts each picture into 14 × 14-pixel patches and applies one table to every patch, which is exactly a convolution with a 14-pixel filter and a 14-pixel stride.</p>
+</section>
+
+<section id="s11" data-part="IV" data-short="RNN" data-builds="s6 s2" data-videos="15">
+  <h2><span class="n">§11</span>Recurrent networks: one network reused along a sequence</h2>
+  <p class="gist">A recurrent network reads a sequence one item at a time, feeding its own output back in, so the same weights handle any length; but repeated multiplication makes old information vanish or explode.</p>
+  <p>Text has an order, and sentences come in different lengths. A fixed network with exactly three inputs cannot read a sentence of twelve words. StatQuest's example is a stock price over several days.</p>
+  <div class="def" id="def-rnn" data-term="Recurrent neural network (RNN)"><p>A network applied once per step of a sequence. At each step it receives the new input and its own output from the previous step, through a feedback weight. The same weights are used at every step.</p></div>
+  <p>Unroll it and you see a chain: day 1 → day 2 → day 3 → …, with the feedback weight w on each link. By the chain rule (<a class="ref" href="#s4">§4</a>), day 1's effect on the final output passes through w once per step. After 50 steps it has been multiplied by w fifty times.</p>
+  <figure class="fig" data-fig="rnn"><figcaption>The unrolled network and the size of the first input's effect after k steps, on a log scale. Any w below 1 shrinks it towards zero; any w above 1 blows it up.</figcaption></figure>
+  <div class="def" id="def-vanish" data-term="Vanishing and exploding gradients"><p>When a slope is multiplied by the same factor many times, it either shrinks to nothing (training cannot change early weights) or grows without limit (training jumps wildly). Long chains of repeated weights cause both.</p></div>
+  <p>Language needs long memory: the subject at the start of a paragraph decides a verb near its end. RNNs struggle with that. Two fixes follow: a better memory cell (<a class="ref" href="#s12">§12</a>), and later a way to skip the chain entirely (<a class="ref" href="#s15">§15</a>).</p>
+</section>
+
+<section id="s12" data-part="IV" data-short="LSTM" data-builds="s11" data-videos="16">
+  <h2><span class="n">§12</span>Long short-term memory: a belt that is not multiplied</h2>
+  <p class="gist">An LSTM keeps a long-term memory on a path with no weights on it, and uses three learned gates (keep, add, show) to decide what changes, so old information can survive many steps.</p>
+  <p>The trouble in <a class="ref" href="#s11">§11</a> was the weight multiplied onto the memory at every step. An LSTM's long-term memory has no weight on its path. It is changed only by two operations: multiplying it by a fraction between 0 and 1 (forgetting), and adding something new.</p>
+  <div class="def" id="def-gate" data-term="Gate"><p>A small neuron with a sigmoid bend, so its output lies between 0 and 1 and works as a percentage. Multiplying a value by a gate lets through that percentage of it.</p></div>
+  <div class="def" id="def-lstm" data-term="LSTM"><p>A recurrent unit with two memories. Long-term memory runs straight through; at each step a forget gate decides what fraction to keep, an input gate decides how much of a new candidate (bent by tanh, between −1 and 1) to add, and an output gate decides how much of the bent long-term memory becomes the short-term memory and output.</p></div>
+  <figure class="fig" data-fig="lstm"><figcaption>One LSTM unit over four days. Each gate shows its percentage for the chosen day. The small plot tracks the long-term memory (green) and the output (purple). The weights are illustrative, not trained on real data.</figcaption></figure>
+  <p>Because the long-term path is only scaled by gates that can sit near 100%, slopes can pass back through many steps without vanishing. LSTMs powered machine translation until 2017, and they are the building block of the encoder-decoder in <a class="ref" href="#s14">§14</a>.</p>
+</section>
+
+<h1 class="part" data-part-title="V">Part V · Words as numbers, and attention</h1>
+<p class="partlead">To feed text to a network, each word must become a list of numbers that carries its meaning. Then the network must be able to look back at any word directly.</p>
+
+<section id="s13" data-part="V" data-short="Word embedding" data-builds="s9 s7" data-videos="17">
+  <h2><span class="n">§13</span>Word embeddings: a learned table of word lists</h2>
+  <p class="gist">An embedding gives each word a row in a table of numbers; training on "predict the neighbouring word" pulls words used in similar contexts to similar rows.</p>
+  <p>Words are not numbers. The naive fix is to number them (Troll 2 = 1, is = 2, …), but then "word 3 is three times word 1", which means nothing. The next fix is a one-hot list: as many slots as words in the vocabulary, all zero except a single 1. That is honest, but every pair of words looks equally different.</p>
+  <div class="def" id="def-embedding" data-term="Embedding"><p>A table with one row per vocabulary entry. A word's embedding is its row: a short list of numbers learned so that words used similarly get similar lists. Feeding a one-hot list into a fully connected layer picks out exactly one row of its weight table, so an embedding is that layer, done as a lookup.</p></div>
+  <p>StatQuest's example uses two sentences, "Troll 2 is great" and "Gymkata is great". Each word gets two numbers. A tiny network takes a word's two numbers, scores every vocabulary word with a fully connected layer (<a class="ref" href="#s7">§7</a>), applies SoftMax (<a class="ref" href="#s8">§8</a>) and is trained with cross entropy (<a class="ref" href="#s9">§9</a>) to predict the next word. "Troll 2" and "Gymkata" are both followed by "is", so the only way to predict well is to give them nearly the same two numbers.</p>
+  <figure class="fig" data-fig="w2v"><figcaption>Training a two-number embedding live. Each dot is a word's row; the faint trails show how the rows move. Watch "Troll 2" and "Gymkata" end up close together.</figcaption></figure>
+  <div class="def" id="def-word2vec" data-term="word2vec"><p>A popular recipe for training embeddings at scale: predict a word from its neighbours or its neighbours from the word, using a wide window and tricks (such as negative sampling) to avoid scoring every word in the vocabulary each time.</p></div>
+  <div class="def" id="def-token" data-term="Token"><p>The unit a language model reads: a word, a piece of a word, a punctuation mark or a special marker such as &lt;EOS&gt; (end of sequence). The tokenizer splits text into tokens and gives each one an ID that selects its row of the embedding table.</p></div>
+  <p>SmolVLM2's embedding table has 49,280 rows, one per token, with 2,048 numbers in each row. That is 100,925,440 learned numbers, and it is the first thing the model does to any text.</p>
+</section>
+
+<section id="s14" data-part="V" data-short="Seq2seq" data-builds="s12 s13" data-videos="18">
+  <h2><span class="n">§14</span>Encoder-decoder: read a whole sentence, then write one</h2>
+  <p class="gist">An encoder LSTM reads the input sentence into a fixed set of memory numbers (the context), and a decoder LSTM starts from that context and writes the output one token at a time, feeding each word back in.</p>
+  <p>Translation needs a different length out than in: "Let's go" (two words) becomes "Vamos" (one). StatQuest's design:</p>
+  <ol>
+    <li>Embed each English token (<a class="ref" href="#s13">§13</a>) and feed it to an LSTM (<a class="ref" href="#s12">§12</a>), ending with &lt;EOS&gt;.</li>
+    <li>Take the LSTM's final memories as the <b>context</b>.</li>
+    <li>A second LSTM starts from the context. Feed it &lt;EOS&gt; to mean "begin". Its output goes through a fully connected layer and SoftMax over Spanish tokens.</li>
+    <li>Feed the chosen word back in as the next input. Stop when it predicts &lt;EOS&gt;.</li>
+  </ol>
+  <figure class="fig" data-fig="seq2seq"><figcaption>Translating "Let's go". Step through the encoder, the context hand-off and the decoder.</figcaption></figure>
+  <div class="def" id="def-encoder" data-term="Encoder and decoder"><p>The encoder turns the input sequence into numbers that represent it. The decoder generates an output sequence one token at a time from those numbers and its own previous outputs.</p></div>
+  <div class="def" id="def-autoreg" data-term="Autoregressive generation"><p>Producing output one token at a time, where each new token is predicted from everything produced so far and then appended to the input for the next prediction.</p></div>
+  <p>The weakness is the hand-off: a long sentence must squeeze through one fixed set of memory numbers. The fix is to let the decoder look back at every encoder step directly.</p>
+</section>
+
+<section id="s15" data-part="V" data-short="Attention" data-builds="s14" data-videos="19">
+  <h2><span class="n">§15</span>Attention: look back at every word, weighted by similarity</h2>
+  <p class="gist">At each step, the decoder compares its current state with every encoder output, turns the similarities into shares with SoftMax, and mixes the encoder outputs by those shares.</p>
+  <p>Keep every encoder output, one per input token, instead of only the last. When the decoder is about to write a word, it asks: which input tokens are relevant right now? The answer is computed in three moves.</p>
+  <ol>
+    <li><b>Similarity.</b> Compare the decoder's current list with each encoder output using the dot product: multiply slot by slot and add. Lists that point the same way give a large number.</li>
+    <li><b>Shares.</b> Apply SoftMax (<a class="ref" href="#s8">§8</a>) to the similarities so that they are positive and add to 1.</li>
+    <li><b>Mix.</b> Multiply each encoder output by its share and add them up. That mixture joins the decoder's state for predicting the next word.</li>
+  </ol>
+  <div class="def" id="def-dot" data-term="Dot product"><p>Multiply two lists slot by slot and add the results. Geometrically it is (length × length × cosine of the angle between them), so it is large when two lists point the same way.</p></div>
+  <div class="def" id="def-attention" data-term="Attention"><p>A weighted average of a set of value lists, where the weights come from SoftMax over the similarity between a query and each item's key. Here the query is the decoder state, and the encoder outputs serve as both keys and values.</p></div>
+  <figure class="fig" data-fig="attention"><figcaption>Three encoder outputs as arrows in a plane and the decoder's query in yellow. Drag the query: the shares and the green mixture follow the angle.</figcaption></figure>
+  <p>Attention removes the bottleneck from <a class="ref" href="#s14">§14</a>, and it also removes the long chain from <a class="ref" href="#s11">§11</a>: the decoder reaches word 1 in one hop, however long the sentence. The 2017 paper that introduced the transformer asked: if attention does the important work, do we need the LSTMs at all? Its answer, "Attention Is All You Need", is Part VII. First we need two tools for describing all this compactly.</p>
+</section>
+
+<h1 class="part" data-part-title="VI">Part VI · The language of tables</h1>
+<p class="partlead">Transformers are written as operations on whole tables at once. Two short sections give you that vocabulary.</p>
+
+<section id="s16" data-part="VI" data-short="Tensors" data-builds="s7 s2" data-videos="26">
+  <h2><span class="n">§16</span>Tensors: numbers arranged in directions</h2>
+  <p class="gist">A tensor is a block of numbers with some number of directions: one number, a list, a table, a stack of tables, and so on; its shape lists the length along each direction.</p>
+  <p>Everything a network touches is a block of numbers: inputs, weights, activations and slopes. It helps to have one word for all of them and a short way to write their size.</p>
+  <div class="def" id="def-tensor" data-term="Tensor"><p>A block of numbers arranged along zero or more directions. Its shape lists the length of each direction: [] for one number, [2048] for a list, [2048, 2048] for a table, [13, 3, 384, 384] for 13 colour tiles.</p></div>
+  <figure class="fig" data-fig="tensors"><figcaption>The same idea with more and more directions, each with a real example from SmolVLM2.</figcaption></figure>
+  <p>StatQuest's tensors video makes two more points that matter in practice. First, libraries such as PyTorch store tensors so that a graphics card can process huge numbers of entries in parallel, which is the only reason billion-weight models are practical. Second, tensors remember how they were computed, so that backpropagation (<a class="ref" href="#s6">§6</a>) can be done automatically. That bookkeeping is called automatic differentiation, and you will see it in <a class="ref" href="#s25">§25</a>.</p>
+  <div class="def" id="def-batch" data-term="Batch"><p>Several training examples processed together as one tensor with an extra leading direction. The loss is averaged over the batch before backpropagation.</p></div>
+</section>
+
+<section id="s17" data-part="VI" data-short="Matrix algebra" data-builds="s16" data-videos="27">
+  <h2><span class="n">§17</span>Matrix algebra: one table moves every list at once</h2>
+  <p class="gist">Multiplying a table (matrix) by a list takes the dot product of each row with the list; geometrically it moves the whole space, and a fully connected layer is exactly this followed by a bias and a bend.</p>
+  <p>Write the weights of a fully connected layer (<a class="ref" href="#s7">§7</a>) as a table with one row per output and one column per input. Each output is the dot product (<a class="ref" href="#s15">§15</a>) of its row with the input list. That operation, done for every row, is matrix multiplication.</p>
+  <div class="def" id="def-matrix" data-term="Matrix multiplication"><p>For a table A (m rows, n columns) and a list x (n numbers), A·x is the list of m dot products, one per row of A. For two tables, A·B takes the dot product of every row of A with every column of B, so the inner lengths must match: [m, n] · [n, p] gives [m, p].</p></div>
+  <p>The geometric picture is the one from 3Blue1Brown. A 2 × 2 table moves every point of the plane. Its first column is where the arrow (1, 0) lands, and its second column is where (0, 1) lands. Because the move is linear, every other point follows, and grid lines stay straight, parallel and evenly spaced.</p>
+  <figure class="fig" data-fig="matrix"><figcaption>A 2 × 2 table as a move of the plane. Adjust the four entries, or drag the grey input arrow, and read the multiplication underneath.</figcaption></figure>
+  <div class="def" id="def-transpose" data-term="Transpose"><p>Flipping a table so that its rows become columns, written Aᵀ. If Q and K each hold one row per token, Q·Kᵀ holds the dot product of every query row with every key row (§19).</p></div>
+  <p>Why this matters: one fully connected layer applied to every token of a sentence is one matrix multiplication. Stack the token lists as rows of a table X with shape [tokens, 2048]; then X·W gives every token's output in a single operation. When the books say "a transformer is mostly matrix multiplications", this is what they mean. It also explains the parameter counts: SmolVLM2's q_proj table has shape [2048, 2048], which is 4,194,304 weights.</p>
+  <p>One PyTorch convention you will meet in code: <code>nn.Linear</code> stores its weights as [outputs, inputs] and computes x·Wᵀ + b, so the shapes in a weight file can look flipped.</p>
+</section>
+
+<h1 class="part" data-part-title="VII">Part VII · The transformer</h1>
+<p class="partlead">Remove the LSTMs, keep attention, and let every token attend to every other token. Then stack the result many times.</p>
+
+<section id="s18" data-part="VII" data-short="Transformer" data-builds="s13 s15 s17" data-videos="20">
+  <h2><span class="n">§18</span>The transformer, block by block</h2>
+  <p class="gist">A transformer embeds tokens, adds position information, and then repeats one block many times: self-attention lets tokens mix information, a feed-forward network rewrites each token, and residual additions plus normalisation keep the stack trainable.</p>
+  <p>StatQuest builds the original transformer to translate "Let's go" into "Vamos". Here is each piece, defined in terms of earlier sections. Click the blocks in the figure to see each one's role and its size in SmolVLM2.</p>
+  <figure class="fig" data-fig="transformer"><figcaption>One transformer, bottom to top. The dashed box is the block that repeats: 24 times in SmolVLM2's language model. Click any block.</figcaption></figure>
+  <h3>Word embedding</h3>
+  <p>Exactly <a class="ref" href="#s13">§13</a>: each token becomes its row of a learned table.</p>
+  <h3>Positional encoding</h3>
+  <p>Attention compares lists by dot products, and a dot product does not care about order. "the dog bit the man" and "the man bit the dog" would give the same mixtures. So each token's list must also say where it sits. The original transformer adds a second list made from sine and cosine waves of different frequencies, read off at the token's position. The fast waves tell neighbours apart, and the slow waves tell distant positions apart.</p>
+  <figure class="fig" data-fig="posenc"><figcaption>Four slots of a positional encoding. Each slot is a wave of a different speed, read at the token's position. The combination of values at a position is unique to it.</figcaption></figure>
+  <div class="def" id="def-posenc" data-term="Positional encoding"><p>Extra numbers that tell the model each token's position. The original transformer adds sine and cosine waves of different speeds to the embedding. SmolVLM2 uses RoPE: it rotates pairs of slots in each query and key by an angle proportional to the position, so the dot product between two tokens depends on how far apart they are.</p></div>
+  <h3>Self-attention</h3>
+  <p>In <a class="ref" href="#s15">§15</a> the decoder attended to the encoder. In self-attention every token attends to every token of its own sentence, including itself. Each token makes three lists from its own list, each with its own learned table: a <b>query</b> ("what am I looking for?"), a <b>key</b> ("what do I contain?") and a <b>value</b> ("what do I pass on if chosen?"). Separate tables let one token look for something different from what it advertises. <a class="ref" href="#s19">§19</a> does the arithmetic.</p>
+  <div class="def" id="def-selfattn" data-term="Self-attention"><p>Attention in which the queries, keys and values all come from the same sequence. Each token's output is a mixture of every token's value, weighted by SoftMax of the query-key similarities.</p></div>
+  <div class="def" id="def-qkv" data-term="Query, key, value"><p>Three lists computed from each token by three learned tables (q_proj, k_proj and v_proj in SmolVLM2's code). Query·key measures relevance; the value is what gets mixed in. A fourth table, o_proj, mixes the attention result back into the token's list.</p></div>
+  <div class="def" id="def-heads" data-term="Multi-head attention"><p>Running several attentions side by side, each on its own slice of the lists, so that different heads can track different relations. SmolVLM2's language model has 32 heads of 64 slots each (32 × 64 = 2,048).</p></div>
+  <h3>Residual connections</h3>
+  <p>The attention result is <em>added</em> to the token's input list rather than replacing it. Each block then only has to learn a correction. This also keeps training stable: adding has slope 1 (<a class="ref" href="#s4">§4</a>), so slopes reach the bottom of a 24-block stack without the repeated shrinking of <a class="ref" href="#s11">§11</a>.</p>
+  <div class="def" id="def-residual" data-term="Residual connection"><p>Adding a sub-block's input to its output: output = x + f(x). It gives information and slopes a direct path through deep stacks.</p></div>
+  <h3>Feed-forward network</h3>
+  <p>Attention moves information between tokens. The feed-forward network then rewrites each token on its own, with the same two-layer network from <a class="ref" href="#s2">§2</a> and <a class="ref" href="#s7">§7</a> applied to every position. SmolVLM2 widens each 2,048-slot list to 8,192, bends it and narrows it back. It uses a gated version: one widened copy (gate_proj) is bent by SiLU and multiplies a second widened copy (up_proj), and down_proj brings the result back to 2,048. Most of a language model's weights sit here.</p>
+  <div class="def" id="def-ffn" data-term="Feed-forward network (MLP)"><p>The per-token two-layer network inside each transformer block: widen with one table, bend, narrow with another, then add the result back (residual).</p></div>
+  <h3>Normalisation</h3>
+  <p>StatQuest's version leaves this out, but every real transformer has it. Before attention and before the feed-forward step, each token's list is rescaled to a standard size so that numbers neither grow nor shrink as they pass through dozens of blocks.</p>
+  <div class="def" id="def-norm" data-term="RMSNorm"><p>Divide each token's list by its root-mean-square (the square root of the average of its squared entries), then multiply each slot by a learned gain. SmolVLM2's language model uses it before every attention and feed-forward step.</p></div>
+  <h3>The original encoder-decoder transformer</h3>
+  <p>StatQuest's translator has an encoder stack (self-attention over the English) and a decoder stack (masked self-attention over the Spanish written so far, then encoder-decoder attention as in <a class="ref" href="#s15">§15</a>, then the output layer and SoftMax). Language models such as GPT and SmolVLM2's text model keep only the decoder half (<a class="ref" href="#s20">§20</a>). BERT keeps only the encoder half (<a class="ref" href="#s21">§21</a>).</p>
+  <div class="recap"><ul><li>Block = normalise → self-attention → add → normalise → feed-forward → add.</li><li>Attention mixes across tokens; feed-forward rewrites within a token.</li><li>Stack the block. Size and stack depth are what separate small models from large ones.</li></ul></div>
+</section>
+
+<section id="s19" data-part="VII" data-short="Attention math" data-builds="s18 s15 s8 s17" data-videos="28 20">
+  <h2><span class="n">§19</span>Self-attention as matrix arithmetic</h2>
+  <p class="gist">Stack the token lists into a table X; then Q = X·Wq, K = X·Wk and V = X·Wv; the scores are Q·Kᵀ divided by the square root of the list length, SoftMax goes across each row, and the output is those shares times V.</p>
+  <p>With the vocabulary of <a class="ref" href="#s17">§17</a>, all of self-attention for every token fits in one line:</p>
+  <p style="text-align:center" class="num">output = SoftMax( Q·Kᵀ ÷ √d + mask ) · V</p>
+  <p>Read it in four moves. Each move is something you already know.</p>
+  <ol>
+    <li><b>Queries, keys and values.</b> Multiply the token table X (one row per token) by three learned tables. Every token gets its three lists at once.</li>
+    <li><b>Scores.</b> Q·Kᵀ is the table of every query's dot product with every key (<a class="ref" href="#s15">§15</a>). Row i says how relevant each token is to token i. Divide by √d, the square root of the list length, because dot products of long lists are large, and large scores make SoftMax so sharp that its slope vanishes.</li>
+    <li><b>Mask and SoftMax.</b> For a decoder, add −∞ wherever a token would look at a later token: e^−∞ = 0, so the future gets no share. Then apply SoftMax (<a class="ref" href="#s8">§8</a>) across each row.</li>
+    <li><b>Mix.</b> Multiply the share table by V. Row i of the result is token i's mixture of values.</li>
+  </ol>
+  <figure class="fig" data-fig="selfattn"><figcaption>Self-attention on four tokens with two-slot lists and small fixed weight tables. Hover any row to follow one token through the computation. Turn on the mask to see what a decoder is allowed to look at.</figcaption></figure>
+  <div class="def" id="def-mask" data-term="Causal mask"><p>Setting the score from a token to any later token to −∞ before SoftMax, so each token can only use itself and earlier tokens. It lets a decoder train on every position of a sentence in parallel without seeing the answer.</p></div>
+  <p>The matrix-math video traces exactly these shapes. In SmolVLM2, for one photo and its prompt of about 1,100 tokens, X has shape [1,100, 2,048], each of Wq, Wk, Wv and Wo is [2,048, 2,048], and the score table for each of the 32 heads has shape [1,100, 1,100]. That last number grows with the square of the sequence length, which is why the number of image tokens (<a class="ref" href="#s28">§28</a>) matters so much.</p>
+</section>
+
+<section id="s20" data-part="VII" data-short="Decoder-only" data-builds="s19 s9" data-videos="21">
+  <h2><span class="n">§20</span>Decoder-only transformers: how a language model writes</h2>
+  <p class="gist">A decoder-only transformer reads the prompt and its own output so far as one sequence with a causal mask, predicts the next token with SoftMax, appends it, and repeats.</p>
+  <p>StatQuest's question is "What is StatQuest?" and the answer is "Awesome". The prompt and the answer are one sequence fed through one stack of masked self-attention blocks. Nothing separates the reading from the writing.</p>
+  <figure class="fig" data-fig="generate"><figcaption>Generation, one token at a time. The grid shows which earlier tokens each token can attend to (× is masked). The bars are the next-token probabilities at the last position; they are illustrative numbers.</figcaption></figure>
+  <div class="def" id="def-lm" data-term="Language model"><p>A model that gives a probability for every possible next token given the tokens so far. Generating text means repeatedly choosing a token from those probabilities and appending it.</p></div>
+  <h3>Training is next-token prediction at every position</h3>
+  <p>Because of the mask (<a class="ref" href="#s19">§19</a>), the output at position i has only seen tokens 1 to i. So a single forward pass over a sentence gives one prediction per position, and each is scored with cross entropy (<a class="ref" href="#s9">§9</a>) against the token that actually comes next. A 1,000-token example gives 1,000 training signals at once. In code this is the "shift by one" between inputs and labels.</p>
+  <h3>Choosing a token</h3>
+  <p>Taking the most likely token every time is called greedy decoding. Sampling from the SoftMax probabilities gives varied answers, and that variety is what RLHF (<a class="ref" href="#s24">§24</a>) relies on. Our experiment uses greedy decoding when scoring, because a lane list should be the same every time.</p>
+  <div class="def" id="def-kv" data-term="KV cache"><p>When generating, the keys and values of earlier tokens never change (because of the mask), so they are stored and only the new token's query, key and value are computed at each step.</p></div>
+  <p>This is the whole of SmolVLM2's text side: 24 masked blocks over 2,048-slot lists, a 49,280-row embedding table on the way in and a 49,280-way SoftMax on the way out.</p>
+</section>
+
+<section id="s21" data-part="VII" data-short="BERT & RAG" data-builds="s19" data-videos="22">
+  <h2><span class="n">§21</span>Encoder-only transformers: meaning lists for search</h2>
+  <p class="gist">An encoder-only transformer such as BERT uses self-attention without a mask, so every token sees the whole text, and its outputs are context-aware lists that can be compared by angle to find related documents.</p>
+  <p>Remove the mask and the output layer, and a transformer becomes a machine for turning text into meaningful lists. Each token's output now reflects the whole sentence: "bank" in "river bank" and in "bank account" get different lists. Averaging the token outputs gives one list for a whole passage.</p>
+  <div class="def" id="def-bert" data-term="Encoder-only transformer (BERT)"><p>A stack of unmasked self-attention blocks that produces context-aware embeddings rather than next-token predictions. It is used for classification, clustering and search.</p></div>
+  <div class="def" id="def-cosine" data-term="Cosine similarity"><p>The dot product of two lists divided by both their lengths: the cosine of the angle between them. 1 means the same direction, 0 means unrelated, and −1 means opposite.</p></div>
+  <figure class="fig" data-fig="rag"><figcaption>Document embeddings as directions. Drag the question; documents are ranked by cosine similarity, and the best one is what retrieval would hand to a language model.</figcaption></figure>
+  <div class="def" id="def-rag" data-term="Retrieval-augmented generation (RAG)"><p>Embed a library of documents with an encoder, embed the user's question the same way, retrieve the documents with the highest cosine similarity, and paste them into a decoder's prompt so it can answer from them.</p></div>
+  <p>The vision tower in SmolVLM2 (<a class="ref" href="#s27">§27</a>) is an encoder-only transformer too: no mask, because every patch of a picture may look at every other patch.</p>
+</section>
+
+<h1 class="part" data-part-title="VIII">Part VIII · Learning from rewards</h1>
+<p class="partlead">Sometimes there is no right answer to copy, only feedback on how things went. This is how chat models are tuned after pre-training.</p>
+
+<section id="s22" data-part="VIII" data-short="RL" data-builds="s9 s5" data-videos="23">
+  <h2><span class="n">§22</span>Reinforcement learning: guess, then scale the slope by the reward</h2>
+  <p class="gist">When there is no correct label, act on the network's own guess, pretend that guess was correct to get a cross-entropy slope, then multiply that slope by a reward that is positive if it went well and negative if it went badly.</p>
+  <p>StatQuest's example: you can go to one of two food shops, one with small portions and one with large portions. Whether a large portion is the right choice depends on how hungry you are, but nobody tells you the rule. A tiny network takes hunger and outputs the probability of choosing the large-portion shop through a sigmoid. Only its bias is trained. Its weight on hunger is held fixed here.</p>
+  <p>Each trip goes like this:</p>
+  <ol>
+    <li>Get the probability from the network, and pick a shop at random with that probability.</li>
+    <li><b>Pretend the choice was correct</b> and compute the slope of cross entropy (<a class="ref" href="#s9">§9</a>) with respect to the bias as if it had been the label.</li>
+    <li>See how it went: reward +1 if the portion suited your hunger, −1 if not.</li>
+    <li>Multiply the slope by the reward and take a gradient-descent step (<a class="ref" href="#s5">§5</a>).</li>
+  </ol>
+  <p>A good outcome pushes the network towards what it just did, and a bad one pushes it away. Over many trips the bias settles where the network picks the large-portion shop only when hunger is high.</p>
+  <figure class="fig" data-fig="fries"><figcaption>Learning from rewards. Left: chance of choosing the large-portion shop at each hunger level (the green dashed line is where the right answer switches), with recent trips as dots, green if the choice was right. Right: the bias after each trip. Run 300 trips and the bias moves from 0 towards −10.</figcaption></figure>
+  <div class="def" id="def-rl" data-term="Reinforcement learning"><p>Training from rewards instead of labels: the model acts, the outcome is scored, and its slopes are scaled by that score so that rewarded actions become more likely.</p></div>
+  <div class="def" id="def-reward" data-term="Reward"><p>A number saying how good an outcome was. Its sign decides the direction of the update and its size decides the strength. A reward of +2 pushes twice as hard as +1.</p></div>
+</section>
+
+<section id="s23" data-part="VIII" data-short="RL details" data-builds="s22 s4" data-videos="24">
+  <h2><span class="n">§23</span>The arithmetic of one reinforcement step</h2>
+  <p class="gist">With a sigmoid output p for one choice, cross entropy's slope with respect to the bias is p − 1 if that choice was made and p if the other was; multiply by the reward and step.</p>
+  <p>The network computes p = sigmoid(weight × hunger + bias). Using the chain rule (<a class="ref" href="#s4">§4</a>), the derivative of sigmoid and the cross-entropy slope from <a class="ref" href="#s9">§9</a>:</p>
+  <ul>
+    <li>If we chose the large-portion shop (label 1), the slope of −log(p) with respect to the bias is <b>p − 1</b>.</li>
+    <li>If we chose the small-portion shop (label 0), the slope of −log(1 − p) with respect to the bias is <b>p</b>.</li>
+  </ul>
+  <p>Both are "probability minus target" again. StatQuest's worked numbers:</p>
+  <ul>
+    <li>Trip 1: p = 0.5, the small-portion shop was chosen, so the slope is 0.5. The reward was +1, so the updated slope is 0.5, and with learning rate 1 the bias moves 0 − 0.5 = −0.5.</li>
+    <li>Trip 2: p = 0.4, the large-portion shop was chosen, so the slope is 0.4 − 1 = −0.6. The reward was −1, so the updated slope is +0.6 and the bias moves −0.5 − 0.6 = −1.1.</li>
+  </ul>
+  <figure class="fig" data-fig="rlstep"><figcaption>One reinforcement step as a calculator. Set p = 0.5, small-portion shop, reward +1, bias 0 to reproduce trip 1; then p = 0.4, large-portion shop, reward −1, bias −0.5 for trip 2.</figcaption></figure>
+  <div class="def" id="def-policy" data-term="Policy gradient"><p>The update used here: the slope of the log-probability of the action taken, multiplied by the reward. Averaged over many trials, it points in the direction that increases the expected reward.</p></div>
+</section>
+
+<section id="s24" data-part="VIII" data-short="RLHF" data-builds="s23 s20" data-videos="25">
+  <h2><span class="n">§24</span>Reinforcement learning from human feedback</h2>
+  <p class="gist">RLHF teaches a pre-trained language model to answer helpfully by training a reward model on human preferences between pairs of answers, then using that reward model's scores as the reward in reinforcement learning.</p>
+  <p>A model pre-trained on next-token prediction (<a class="ref" href="#s20">§20</a>) continues text; it does not answer questions. Five stages turn it into an assistant:</p>
+  <figure class="fig" data-fig="rlhf"><figcaption>Top: the RLHF pipeline. Step through it. Bottom: the reward model's loss for one pair of answers as a function of the score gap between the preferred and the other answer.</figcaption></figure>
+  <div class="def" id="def-sft" data-term="Supervised fine-tuning"><p>Continuing to train a pre-trained model with the same next-token loss on a smaller set of chosen examples, such as good answers to prompts. Our spline experiment is supervised fine-tuning: photo and prompt in, lane text as the target.</p></div>
+  <div class="def" id="def-rm" data-term="Reward model"><p>A copy of the fine-tuned model with its unembedding replaced by a single output, trained on human preference pairs so that preferred answers score higher. Its loss is −log(sigmoid(score of preferred − score of other)).</p></div>
+  <p>The reward-model loss is cross entropy (<a class="ref" href="#s9">§9</a>) in disguise: sigmoid(gap) is the model's probability that the person's choice is the better one, and the loss is minus its log. People only need to compare two answers, which is far easier and more consistent than writing perfect ones.</p>
+  <p>Our experiment stops at supervised fine-tuning. Lane lists have a right answer to copy, so there is nothing to prefer.</p>
+</section>
+
+<h1 class="part" data-part-title="IX">Part IX · Writing it in code</h1>
+<p class="partlead">The last six videos turn the ideas into PyTorch. Every line maps back to a section you have read.</p>
+
+<section id="s25" data-part="IX" data-short="PyTorch loop" data-builds="s5 s6 s16" data-videos="29 30">
+  <h2><span class="n">§25</span>PyTorch and Lightning: the training loop</h2>
+  <p class="gist">In PyTorch you write the forward pass; the library records it, runs backpropagation for you with loss.backward(), and an optimizer steps every weight; Lightning writes the loop around those calls.</p>
+  <p>StatQuest's first PyTorch video codes the dose network from <a class="ref" href="#s2">§2</a>, with only b3 trainable, exactly the experiment from <a class="ref" href="#s6">§6</a>:</p>
+<pre class="code">class Dose(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.w1 = nn.Parameter(torch.tensor(3.34), requires_grad=False)
+        self.b1 = nn.Parameter(torch.tensor(-1.43), requires_grad=False)
+        # ... w2, b2, w3, w4 likewise, frozen ...
+        self.b3 = nn.Parameter(torch.tensor(0.0))          # the one number we train
+
+    def forward(self, x):
+        upper = F.softplus(x * self.w1 + self.b1) * self.w3
+        lower = F.softplus(x * self.w2 + self.b2) * self.w4
+        return upper + lower + self.b3</pre>
+  <p><code>requires_grad=False</code> is how you freeze a number. LoRA (<a class="ref" href="#s29">§29</a>) freezes all 2.2 billion of SmolVLM2's numbers this way and trains only the new ones. The loop is the same five moves for every model in this book:</p>
+  <figure class="fig" data-fig="trainloop"><figcaption>The training loop. Each step of the cycle lights up its line of code. Click a step or use the buttons.</figcaption></figure>
+  <div class="def" id="def-autograd" data-term="Automatic differentiation"><p>The library records each operation of the forward pass and, when asked, applies the chain rule backwards through that record to fill in every trainable tensor's slope (its .grad). It is backpropagation (§6) done for you.</p></div>
+  <div class="def" id="def-epoch" data-term="Epoch"><p>One pass through the whole training set. Training usually runs for several epochs.</p></div>
+  <p>Lightning (the second video) moves the loop into the library: you write <code>training_step</code> (forward pass and loss) and <code>configure_optimizers</code>, and a Trainer handles batches, devices, logging and checkpoints. It can also try a range of learning rates (<a class="ref" href="#s5">§5</a>) and suggest one. Our spline experiment uses Hugging Face's Trainer, which plays the same role.</p>
+</section>
+
+<section id="s26" data-part="IX" data-short="Coding models" data-builds="s25 s12 s13 s20" data-videos="31 32 33">
+  <h2><span class="n">§26</span>Coding an LSTM, an embedding and a small GPT</h2>
+  <p class="gist">The last three videos write an LSTM by hand and with nn.LSTM, train word embeddings with nn.Linear and nn.Embedding, and build a decoder-only transformer from embedding, position, masked self-attention, residuals and an output layer.</p>
+  <div class="def" id="def-module" data-term="nn.Module"><p>PyTorch's building block for a network or a piece of one. Its trainable tensors are declared in <code>__init__</code>, its forward pass is written in <code>forward</code>, and modules nest, so a transformer is a module made of block modules made of <code>nn.Linear</code> modules.</p></div>
+  <h3>LSTM (video 31)</h3>
+  <p>The by-hand version writes the four little networks of <a class="ref" href="#s12">§12</a> (forget gate, input gate, candidate, output gate) as weights and a loop over days. The library version replaces all of that with <code>nn.LSTM(input_size=1, hidden_size=1)</code>. The same two-company stock example trains to predict day 5 from days 1 to 4. The heart of the by-hand version is these six lines (names shortened):</p>
+<pre class="code">keep   = torch.sigmoid(short * self.wlr1 + x * self.wlr2 + self.blr1)    # forget gate, §12
+add    = torch.sigmoid(short * self.wpr1 + x * self.wpr2 + self.bpr1)    # input gate
+cand   = torch.tanh(short * self.wp1 + x * self.wp2 + self.bp1)          # candidate
+long   = long * keep + cand * add
+show   = torch.sigmoid(short * self.wo1 + x * self.wo2 + self.bo1)      # output gate
+short  = torch.tanh(long) * show</pre>
+  <h3>Word embedding (video 32)</h3>
+  <p>The network of <a class="ref" href="#s13">§13</a> is written twice: once as one-hot inputs into <code>nn.Linear(4, 2, bias=False)</code>, and once with <code>nn.Embedding.from_pretrained(weights)</code>, which does the same row lookup directly. The two give identical lists, which shows that an embedding is a fully connected layer applied to one-hot inputs.</p>
+  <h3>A ChatGPT-like transformer (video 33)</h3>
+  <p>The final video builds a decoder-only transformer that learns to answer "What is StatQuest?" with "Awesome". It has word embedding, sinusoidal position encoding, one masked self-attention layer with q, k and v tables, a residual connection, and a fully connected output layer trained with cross entropy on the next token. The code below is a compact version with the modern pieces SmolVLM2 also uses (normalisation, a feed-forward network and stacked blocks). Point at any line to see which section explains it.</p>
+  <figure class="fig" data-fig="codemap"><figcaption>A small decoder-only transformer in PyTorch. Each highlighted group of lines is one idea from this book; point at a line to find its section.</figcaption></figure>
+  <p>Comparing this to SmolVLM2's text model: d = 2,048, heads = 32, layers = 24, vocab = 49,280, RoPE instead of added positions, and a gated SiLU feed-forward. Nothing else is structurally different.</p>
+</section>
+
+<h1 class="part" data-part-title="X">Part X · Pictures, SmolVLM2 and LoRA</h1>
+<p class="partlead">Everything so far works on tokens. A vision-language model turns a photo into more tokens and lets the language model read them like words.</p>
+
+<section id="s27" data-part="X" data-short="VLMs" data-builds="s10 s19 s13" data-videos="">
+  <h2><span class="n">§27</span>Vision-language models: a picture becomes tokens</h2>
+  <p class="gist">A vision-language model cuts the image into small patches, turns each patch into a list with a vision transformer, converts those lists to the size of the language model's token lists, and places them in the prompt where the image goes.</p>
+  <p>There is no StatQuest video for this part; it is built from the pieces you have. A vision-language model (VLM) has three parts.</p>
+  <ol>
+    <li><b>Patches.</b> Cut the picture into a grid of small squares, as in the convolution of <a class="ref" href="#s10">§10</a>. Flatten each square's pixels into one list and multiply it by a learned table. Each patch is now a "visual word".</li>
+    <li><b>Vision encoder.</b> Run those patch lists through an encoder-only transformer (<a class="ref" href="#s21">§21</a>): unmasked self-attention, so every patch can look at every other patch. A patch of white paint learns whether it belongs to a line that continues across the picture.</li>
+    <li><b>Connector.</b> Convert the vision lists into lists the language model can read: the same length as its token embeddings (<a class="ref" href="#s13">§13</a>). They are then placed into the prompt where the image placeholder sits, and the language model attends to them like any other token (<a class="ref" href="#s19">§19</a>).</li>
+  </ol>
+  <figure class="fig" data-fig="patches"><figcaption>A road picture cut into patches. Click a patch to see its pixels. At a patch size of 14 pixels this is the grid SmolVLM2's vision tower uses on each tile.</figcaption></figure>
+  <div class="def" id="def-vlm" data-term="Vision-language model (VLM)"><p>A language model whose prompt can contain image tokens. A vision encoder and a connector turn the image into lists the size of text-token embeddings.</p></div>
+  <div class="def" id="def-patch" data-term="Patch"><p>A small square of pixels (14 × 14 in SmolVLM2) treated as one input to the vision encoder: 14 × 14 × 3 = 588 numbers mapped to one list.</p></div>
+  <div class="def" id="def-vit" data-term="Vision transformer"><p>An encoder-only transformer whose tokens are image patches plus learned position embeddings. SmolVLM2's is SigLIP-style: 27 blocks, 1,152-slot lists, 16 heads.</p></div>
+  <div class="def" id="def-connector" data-term="Connector"><p>The small network between the vision encoder and the language model. SmolVLM2's groups neighbouring patches and applies one table that maps them to a 2,048-slot token.</p></div>
+</section>
+
+<section id="s28" data-part="X" data-short="SmolVLM2" data-builds="s27 s20" data-videos="">
+  <h2><span class="n">§28</span>SmolVLM2, with its real numbers</h2>
+  <p class="gist">SmolVLM2-2.2B cuts the photo into 384-pixel tiles, turns each tile into 729 patch lists, packs every 3 × 3 block of patches into one 2,048-slot token (81 per tile), and feeds those tokens plus the prompt to a 24-block decoder that writes the lane text.</p>
+  <p>The experiment uses <code>HuggingFaceTB/SmolVLM2-2.2B-Instruct</code>. The numbers here were read from its configuration and weight files.</p>
+  <h3>Step 1: tiles</h3>
+  <p>The vision tower only accepts 384 × 384 pictures. A LLAMAS photo is 1,276 × 717 and its lane markings are thin, so shrinking it to 384 pixels would lose them. Instead, the processor resizes the photo so that its long side is a multiple of 384, stretches the short side up to the next multiple, and cuts the result into 384 × 384 tiles. It also adds one extra tile: the whole photo squashed to 384 × 384, for an overview. Only eight tile counts are possible for this photo shape, and the experiment's <code>SPLINE_TILES</code> setting chooses among them.</p>
+  <div class="def" id="def-tile" data-term="Tile"><p>One 384 × 384 piece of the resized photo, seen by the vision tower as a separate picture. Every photo also gets one overview tile: the whole photo squashed to 384 × 384. Each tile costs 81 image tokens.</p></div>
+  <figure class="fig" data-fig="tiles"><figcaption>The eight possible tilings of a 1,276 × 717 photo. More tiles show more detail but cost more tokens: every tile becomes 81 tokens.</figcaption></figure>
+  <h3>Step 2: patches and the vision tower</h3>
+  <p>Each tile is cut into 14-pixel patches: 384 ÷ 14 gives 27 per side, so 27 × 27 = 729 patches. Each becomes a 1,152-slot list plus a learned position list (a [729, 1,152] table), and all 729 pass through 27 unmasked transformer blocks (<a class="ref" href="#s21">§21</a>) with GELU feed-forward networks of width 4,304.</p>
+  <h3>Step 3: the connector packs 9 patches into 1 token</h3>
+  <p>729 tokens per tile would be too many: at 13 tiles that is 9,477 tokens before the question, and attention's cost grows with the square of the length (<a class="ref" href="#s19">§19</a>). So the connector lays each 3 × 3 block of neighbouring patch lists end to end ("pixel shuffle"): 9 × 1,152 = 10,368 numbers. One table of shape [2,048, 10,368] maps that to a single 2,048-slot token. Each tile yields 9 × 9 = 81 tokens.</p>
+  <div class="def" id="def-shuffle" data-term="Pixel shuffle"><p>Laying each 3 × 3 block of neighbouring patch lists end to end, turning 729 lists of 1,152 numbers into 81 lists of 10,368 numbers. It keeps all the information but makes the sequence nine times shorter.</p></div>
+  <figure class="fig" data-fig="shuffle"><figcaption>Pixel shuffle. Each 3 × 3 block of the 27 × 27 patch grid becomes one of the 81 image tokens. Point at either grid.</figcaption></figure>
+  <h3>Step 4: the language model reads and writes</h3>
+  <p>The prompt template puts the image tokens where <code>&lt;image&gt;</code> appears (token ID 49190 marks each slot), followed by the question "Generate a list of splines for all road and taxi lines in this image". From there it is the decoder of <a class="ref" href="#s20">§20</a>: 24 blocks of RMSNorm, 32-head attention with RoPE, and a gated SiLU feed-forward of width 8,192. At 13 tiles, the 1,053 image tokens are by far the largest part of the sequence.</p>
+  <h3>How training scores only the answer</h3>
+  <p>During fine-tuning the target lane text is appended after "Assistant:", and the label of every position before it is set to −100, a value PyTorch's cross entropy ignores. The model is graded only on writing the answer (<a class="ref" href="#s9">§9</a>).</p>
+  <figure class="fig" data-fig="mask"><figcaption>One training example and its labels. Only the green answer tokens contribute to the loss.</figcaption></figure>
+  <h3>Where the 2.2 billion numbers are</h3>
+  <figure class="fig" data-fig="params"><figcaption>SmolVLM2-2.2B's numbers by part, counted from its weight file. Bars are scaled to the text model.</figcaption></figure>
+  <p>Full fine-tuning, the experiment's default, adjusts all of them. Every step must store a slope for each number, plus the optimizer's running averages (<a class="ref" href="#s5">§5</a>). That memory cost is the reason for the next section.</p>
+</section>
+
+<section id="s29" data-part="X" data-short="LoRA" data-builds="s28 s17 s5" data-videos="">
+  <h2><span class="n">§29</span>LoRA: freeze the big table, train a thin correction</h2>
+  <p class="gist">LoRA keeps every original weight frozen and adds to chosen tables a correction made of two thin tables, B (tall) times A (wide), so a 2,048 × 2,048 table is adjusted by training only 2 × 2,048 × 16 numbers.</p>
+  <p>Fine-tuning changes a weight table W into W + ΔW. The insight behind LoRA is that, for adapting a model to one narrow task, ΔW does not need to be an arbitrary table. A table built as B·A, where B has shape [2,048, r] and A has shape [r, 2,048], can only move lists within r directions (<a class="ref" href="#s17">§17</a>), and with r = 16 that turns out to be enough for many tasks.</p>
+  <div class="def" id="def-rank" data-term="Rank"><p>The number of independent directions a table can produce outputs in. B·A, with r columns in B, has rank at most r, whatever its size.</p></div>
+  <div class="def" id="def-lora" data-term="LoRA (low-rank adaptation)"><p>Freeze a pre-trained table W and learn a correction (alpha ÷ r) × B·A alongside it, so the layer computes x·(W + (alpha ÷ r)·B·A). Only A and B are trained. B starts at zero, so training starts from the unchanged model.</p></div>
+  <figure class="fig" data-fig="lora"><figcaption>The LoRA correction for one table, drawn small. Change the rank and see how many numbers are trained in the real 2,048-wide table. Switch to "at the start of training" to see why the correction begins as zero.</figcaption></figure>
+  <h3>How this experiment configures it</h3>
+  <p>In <code>spline/model.py</code>, LoRA is switched on with r = 16, alpha = 32 (so the correction is scaled by 2) and dropout 0.05 on the adapter's input. It targets every module whose name ends in <code>q_proj</code>, <code>k_proj</code>, <code>v_proj</code> or <code>o_proj</code> but skips any whose name contains "vision". So the four attention tables (<a class="ref" href="#s18">§18</a>) of each of the 24 text blocks get an adapter, and the vision tower, connector, feed-forward networks and embeddings stay frozen.</p>
+  <figure class="fig" data-fig="lorawhere"><figcaption>Where the adapters attach. Point at any table to see its size and whether it is adapted.</figcaption></figure>
+  <p>The count: each adapted table adds 2,048 × 16 + 16 × 2,048 = 65,536 numbers, and 24 blocks × 4 tables = 96 tables, giving <b>6,291,456</b> trainable numbers, 0.28% of the model. For scoring, <code>merge_and_unload</code> adds (alpha ÷ r)·B·A into each W permanently, so the scored model has exactly the original shape and speed.</p>
+  <div class="note"><b>Why attention tables?</b> Our task changes what the model looks at (thin painted lines across many image tokens) and how it relates them to output numbers. Attention's query, key, value and output tables are exactly where tokens decide what to read from each other (§19). The vision tower is left alone so that its general picture features stay intact.</div>
+</section>
+
+<section id="s30" data-part="X" data-short="Our experiment" data-builds="s28 s29 s9" data-videos="">
+  <h2><span class="n">§30</span>The spline experiment, end to end</h2>
+  <p class="gist">One photo goes in as 13 tiles of 81 tokens, the prompt asks for splines, and the model writes one line per lane of six numbers that a cubic curve is drawn through; fine-tuning teaches that format with cross entropy on the answer tokens.</p>
+  <p>Each line of the answer is <code>y_top y_bottom x1 x2 x3 x4</code>, all as fractions of the photo. The four x values sit at four evenly spaced heights from y_top to y_bottom, and the lane is the single cubic curve through those four points. Lines are sorted by their bottom x, left to right. A line that does not have six numbers, or whose top is not above its bottom, makes the scorer reject the whole answer.</p>
+  <div class="def" id="def-laneline" data-term="Lane line (spline answer)"><p>One line of the model's answer: six numbers, top, bottom and four x positions, each a fraction of the photo. The lane is the cubic curve through the four points (x₁ at the top height, x₄ at the bottom, two evenly spaced between).</p></div>
+  <figure class="fig" data-fig="splines"><figcaption>The answer format, live. Edit the numbers and the curves redraw on the picture. Break a line to see what the scorer rejects.</figcaption></figure>
+  <p>Now the whole path, with every step pointing at the section that explains it:</p>
+  <ol>
+    <li>The photo is resized and stretched to 1,536 × 1,152 and cut into 12 tiles, plus 1 overview tile (<a class="ref" href="#s28">§28</a>).</li>
+    <li>Each tile becomes 729 patches (<a class="ref" href="#s27">§27</a>), which pass through 27 unmasked attention blocks (<a class="ref" href="#s21">§21</a>).</li>
+    <li>The connector packs them into 81 tokens of 2,048 numbers per tile: 1,053 in all (<a class="ref" href="#s28">§28</a>).</li>
+    <li>The question is tokenised and embedded (<a class="ref" href="#s13">§13</a>) and placed after the image tokens.</li>
+    <li>24 masked decoder blocks (<a class="ref" href="#s20">§20</a>), each with attention (<a class="ref" href="#s19">§19</a>), a feed-forward network (<a class="ref" href="#s18">§18</a>) and residuals, run over the whole sequence.</li>
+    <li>The last position's list is scored against all 49,280 tokens and SoftMax picks the next one (<a class="ref" href="#s8">§8</a>), again and again, until the end token.</li>
+    <li>In training, each answer token's probability gives a cross-entropy loss (<a class="ref" href="#s9">§9</a>), backpropagation finds every slope (<a class="ref" href="#s6">§6</a>), and gradient descent steps either all 2.2 billion weights or, with LoRA, only the 6.3 million adapter numbers (<a class="ref" href="#s29">§29</a>).</li>
+  </ol>
+  <p>The score is the average horizontal pixel error between each true lane and its closest predicted lane, measured at eight heights and capped at one photo width. Everything you need to understand that number, and every number in between, is in the sections above.</p>
+</section>
+
+<h1 class="part" data-part-title="A">Appendix</h1>
+
+<section id="s31" data-part="A" data-short="Video index" data-videos="">
+  <h2><span class="n">§31</span>All 33 videos</h2>
+  <p class="gist">Every video in the playlist, in order, with the sections that cover it.</p>
+  <p>The playlist is StatQuest's <a href="https://www.youtube.com/playlist?list=PLblh5JKOoLUIxGDQs4LFFD--41Vzf-ME1" target="_blank" rel="noopener">Neural Networks / Deep Learning</a>, about 11 hours in all. A good evening pairing is one Part of this book and its videos.</p>
+  <table class="vids" id="video-index"></table>
+</section>
+
+<section id="s32" data-part="A" data-short="Glossary" data-videos="">
+  <h2><span class="n">§32</span>Glossary</h2>
+  <p class="gist">Every defined term, alphabetically, with the section that introduces it.</p>
+  <dl class="gloss" id="glossary"></dl>
+</section>
+
+</main>
+<script src="diagrams.js"></script>
+</body>
+</html>

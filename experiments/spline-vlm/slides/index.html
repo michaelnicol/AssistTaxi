@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How SmolVLM2 is built</title>
+  <style>
+    @font-face {
+      font-family: "CM";
+      src: url("https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/fonts/KaTeX_Main-Regular.woff2") format("woff2");
+      font-weight: 400;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "CM";
+      src: url("https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/fonts/KaTeX_Main-Bold.woff2") format("woff2");
+      font-weight: 700;
+      font-display: swap;
+    }
+    :root {
+      --bg: #000;
+      --ink: #f2f2f2;
+      --muted: #b8b8b8;
+      --blue: #58c4dd;
+      --blue-dim: rgba(88, 196, 221, 0.16);
+      --yellow: #ffff00;
+      --green: #83c167;
+      --grey: #888;
+      --road: #4a4a4a;
+      --hood: #141414;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); }
+    body {
+      font-family: "CM", "Latin Modern Roman", "STIX Two Text", Georgia, serif;
+      color: var(--ink);
+      line-height: 1.45;
+    }
+    main { max-width: 960px; margin: 0 auto; padding: 56px 28px 96px; }
+    h1 { font-size: 2.7rem; font-weight: 400; letter-spacing: -0.02em; line-height: 1.05; margin: 0 0 16px; }
+    h2 { font-size: 1.8rem; font-weight: 400; margin: 72px 0 12px; }
+    h3 { font-size: 1.28rem; font-weight: 400; color: var(--blue); margin: 28px 0 8px; }
+    p { font-size: 1.22rem; margin: 0 0 14px; color: #e4e4e4; }
+    .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 22px 0 8px; }
+    .flow span { border: 1px solid #3a3a3a; padding: 8px 10px; color: var(--ink); font-size: 1rem; }
+    .flow span.here { border-color: var(--yellow); color: var(--yellow); }
+    .flow i { color: var(--grey); font-style: normal; }
+    .nums { font-size: 1.05rem; color: var(--muted); margin: 0 0 16px; }
+    .nums b { color: var(--ink); font-weight: 400; }
+    .lede { color: var(--muted); }
+    .say { border-left: 3px solid var(--blue); padding: 2px 0 2px 16px; color: var(--muted); font-size: 1.08rem; }
+    .row { display: flex; gap: 32px; align-items: flex-end; flex-wrap: wrap; margin: 28px 0 8px; }
+    figure { margin: 0; }
+    figcaption { font-size: 1.02rem; color: var(--muted); margin-top: 10px; max-width: 280px; }
+    .counts { font-size: 1.35rem; letter-spacing: 0.08em; }
+    .counts b { color: var(--yellow); font-weight: 400; }
+    svg.road { display: block; background: #1a1a1a; }
+    .mosaic { display: grid; grid-template-columns: repeat(4, 62px); gap: 8px; width: max-content; }
+    .tile {
+      width: 62px; height: 46px; outline: 1.5px solid var(--blue);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='248' height='138'%3E%3Crect width='248' height='138' fill='%231a1a1a'/%3E%3Cpolygon points='0,138 248,138 162,34 86,34' fill='%234a4a4a'/%3E%3Cpath d='M 54 138 Q 100 82 114 34' fill='none' stroke='%23ffff00' stroke-width='6' stroke-linecap='round'/%3E%3Cpath d='M 194 138 Q 148 82 134 34' fill='none' stroke='%23ffff00' stroke-width='6' stroke-linecap='round'/%3E%3Cpolygon points='36,138 212,138 186,122 62,122' fill='%23141414'/%3E%3C/svg%3E");
+      background-size: 248px 138px;
+      background-repeat: no-repeat;
+    }
+    .tile.mark { outline: 2.5px solid var(--yellow); }
+    .stage { margin: 28px 0 8px; }
+    #scene { width: 100%; height: auto; display: block; }
+    .halves { display: flex; gap: 48px; flex-wrap: wrap; align-items: flex-start; margin-top: 8px; }
+    .qkv { display: flex; gap: 18px; }
+    .mini { display: grid; grid-template-columns: repeat(4, 14px); gap: 3px; }
+    .mini i { width: 14px; height: 14px; background: var(--blue-dim); box-shadow: inset 0 0 0 1px var(--blue); display: block; }
+    .mini.talk { position: relative; }
+    .mini.talk::after {
+      content: ""; position: absolute; left: 0; right: 0; top: 17px; height: 4px; background: var(--yellow);
+    }
+    .lock { color: var(--grey); }
+    .name { display: block; margin-top: 8px; color: var(--blue); font-size: 1rem; text-align: center; }
+    .halves figure { max-width: 420px; }
+    .halves figcaption { max-width: 420px; }
+
+    #scene .cell { fill: var(--blue-dim); stroke: var(--blue); stroke-width: 1.25; }
+    #scene .vec { fill: #f2f2f2; stroke: none; }
+    #scene .out { fill: var(--blue); stroke: none; }
+    #scene .strip-a { fill: var(--yellow); }
+    #scene .strip-b { fill: var(--green); }
+    #scene .add { fill: var(--yellow); }
+    #scene text { fill: var(--muted); font-family: "CM", Georgia, serif; font-size: 18px; }
+    #scene .em { fill: var(--yellow); }
+    #scene .blue { fill: var(--blue); }
+    #scene .green { fill: var(--green); }
+
+    #scene .cell { fill: rgba(88, 196, 221, 0.08); }
+    #scene .bead { offset-path: path("M168,341 H336 392 V304 H411 V248 H511 V226"); animation: travel 5.5s linear infinite; }
+    @keyframes travel { to { offset-distance: 100%; } }
+    @media (prefers-reduced-motion: reduce) {
+      #scene .bead { animation: none; offset-distance: 55%; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <p class="say">From word2vec up to the model we actually train, SmolVLM2-2.2B. The sizes below are the ones in that checkpoint.</p>
+  <h1>One list of numbers, then a photo, then a small edit.</h1>
+  <p class="lede">A word is a list of numbers. A layer mixes those lists. The photo is turned into more lists of the same length and dropped into the sentence. LoRA is a small edit to four tables inside each language layer.</p>
+  <div class="flow" aria-label="Order of the model">
+    <span>Words</span><i>→</i>
+    <span>Photo cut into tiles</span><i>→</i>
+    <span>27 vision layers</span><i>→</i>
+    <span>81 lists per tile</span><i>→</i>
+    <span>24 language layers</span><i>→</i>
+    <span>Next word</span><i>→</i>
+    <span class="here">LoRA, last</span>
+  </div>
+
+  <h2>1. A token is one row of a table</h2>
+  <p>Word2vec gave every word a list of numbers, and trained those lists so a word could predict its neighbors. This model still starts there. The lists live in one table, the embedding table. A token is one row. A token is a piece of text, often a word, sometimes a piece of a word.</p>
+  <p class="nums">The table has <b>49,280 rows</b>, and each row is <b>2,048 numbers</b> long.</p>
+  <p>A sentence is a sequence of those rows, in order. The sentence so far, including the words the model has already written, is the whole input to the next step. Nothing else about the words is kept.</p>
+
+  <h2>2. One layer mixes the lists, then rewrites each one</h2>
+  <p>The model does not jump from those lists to an answer. It repeats a layer. SmolVLM2’s language half has 24 of them. Each layer does two jobs, and then adds its result back onto the lists it was given, so a layer writes a change rather than a replacement.</p>
+
+  <h3>Attention decides who matters</h3>
+  <p>Each position makes three new lists from its 2,048 numbers, using three tables. <b>Q</b> is the question this position is asking. <b>K</b> is the label every position offers. <b>V</b> is the content that position will hand over if it is chosen. The match between one question and every label becomes a set of weights that add up to 1. Those weights mix the V lists. That mixture is what this position gathered from the rest of the sequence.</p>
+  <p>This happens 32 times in parallel. The 2,048 numbers are split into 32 heads of 64, because the checkpoint sets the head width at 64 and 2,048 ÷ 64 = 32. Each head can care about something different. A fourth table, <b>O</b>, stitches the 32 mixtures back into one list of 2,048. Q, K, V, and O are the four tables LoRA will touch. Each one is 2,048 by 2,048.</p>
+  <p>Order has to get in somewhere, because a bag of lists would not know which word came first. Before the comparison, Q and K are rotated by their position. The rotation is set so the sequence can run out to 8,192 positions.</p>
+
+  <svg viewBox="0 0 860 150" width="100%" role="img" aria-label="One position is split into Q, K, and V. The weights mix V, and O stitches the heads back together.">
+    <rect x="8" y="8" width="26" height="88" fill="#f2f2f2"/>
+    <text x="21" y="122" text-anchor="middle" fill="#b8b8b8" font-family="CM, Georgia, serif" font-size="16">position</text>
+    <path d="M42 52 H78" stroke="#888" stroke-width="1.5" fill="none"/>
+    <polygon points="78,52 68,47 68,57" fill="#888"/>
+    <rect x="90" y="8" width="22" height="88" fill="#ffff00"/>
+    <text x="101" y="122" text-anchor="middle" fill="#ffff00" font-family="CM, Georgia, serif" font-size="16">Q</text>
+    <rect x="160" y="8" width="22" height="88" fill="#58c4dd"/>
+    <text x="171" y="122" text-anchor="middle" fill="#58c4dd" font-family="CM, Georgia, serif" font-size="16">K</text>
+    <rect x="230" y="8" width="22" height="88" fill="#83c167"/>
+    <text x="241" y="122" text-anchor="middle" fill="#83c167" font-family="CM, Georgia, serif" font-size="16">V</text>
+    <path d="M260 52 H330" stroke="#b8b8b8" stroke-width="1.5" fill="none"/>
+    <polygon points="330,52 320,47 320,57" fill="#b8b8b8"/>
+    <text x="348" y="57" fill="#b8b8b8" font-family="CM, Georgia, serif" font-size="16">weights mix V</text>
+    <rect x="530" y="8" width="26" height="88" fill="#58c4dd"/>
+    <text x="543" y="122" text-anchor="middle" fill="#58c4dd" font-family="CM, Georgia, serif" font-size="16">32 heads</text>
+    <path d="M564 52 H620" stroke="#58c4dd" stroke-width="1.5" fill="none"/>
+    <polygon points="620,52 610,47 610,57" fill="#58c4dd"/>
+    <rect x="632" y="8" width="26" height="88" fill="#f2f2f2"/>
+    <text x="645" y="122" text-anchor="middle" fill="#f2f2f2" font-family="CM, Georgia, serif" font-size="16">O</text>
+  </svg>
+
+  <h3>The wide step rewrites one position at a time</h3>
+  <p>Attention moved information between positions. The second half of the layer does not look at the neighbors. It rewrites each list on its own. Two tables expand 2,048 numbers to 8,192. Those two expansions are multiplied, and a third table brings the result back to 2,048. That result is added onto the list, the same way the attention change was.</p>
+  <p class="nums">One language layer: attention (Q, K, V, O, each <b>2,048 × 2,048</b>), then the wide step (<b>2,048 → 8,192 → 2,048</b>). Twenty-four copies of that.</p>
+
+  <h2>3. The last list picks the next token</h2>
+  <p>After the 24th layer, the list at the end of the sequence is scored against every row of a second big table, the output table, also 49,280 by 2,048. Each score says how fitting that token is as the next piece of text. The highest score is written down, appended to the sequence, and the 24 layers run again. The model never writes the whole answer at once. It writes one token, then the next, until it stops.</p>
+  <p>Training is the same comparison used in reverse. We know which token should have won at each position of the lane text. Nudging the tables so that token’s score comes out on top is the whole of learning. The positions that belong to the question are left out of that score, so the model is trained on the lane lines and not on repeating the prompt.</p>
+
+  <h2>4. The photo becomes more rows of the same table</h2>
+  <p>The model only focuses a window 384 pixels wide. Each photo is 1276 by 717, so it is handed over as several looks. Twelve are close-ups. One is the whole photo, shrunk, so the pieces still have a map. That is 13, the usual setting.</p>
+
+  <div class="row">
+    <figure>
+      <svg class="road" width="320" height="180" viewBox="0 0 320 180" role="img" aria-label="A dashcam view of a road with two lane lines">
+        <polygon points="0,180 320,180 210,44 110,44" fill="#4a4a4a"/>
+        <path d="M 70 180 Q 130 108 148 44" fill="none" stroke="#ffff00" stroke-width="7" stroke-linecap="round"/>
+        <path d="M 250 180 Q 190 108 172 44" fill="none" stroke="#ffff00" stroke-width="7" stroke-linecap="round"/>
+        <polygon points="48,180 272,180 240,158 80,158" fill="#141414"/>
+      </svg>
+      <figcaption>The photo, as the camera took it.</figcaption>
+    </figure>
+    <figure>
+      <div class="mosaic" role="img" aria-label="The same road cut into twelve close-ups. The yellow square is one tile.">
+        <div class="tile" style="background-position:0 0"></div>
+        <div class="tile" style="background-position:-62px 0"></div>
+        <div class="tile" style="background-position:-124px 0"></div>
+        <div class="tile" style="background-position:-186px 0"></div>
+        <div class="tile" style="background-position:0 -46px"></div>
+        <div class="tile" style="background-position:-62px -46px"></div>
+        <div class="tile mark" style="background-position:-124px -46px"></div>
+        <div class="tile" style="background-position:-186px -46px"></div>
+        <div class="tile" style="background-position:0 -92px"></div>
+        <div class="tile" style="background-position:-62px -92px"></div>
+        <div class="tile" style="background-position:-124px -92px"></div>
+        <div class="tile" style="background-position:-186px -92px"></div>
+      </div>
+      <figcaption>Twelve close-ups. The yellow square is one tile.</figcaption>
+    </figure>
+    <figure>
+      <svg class="road" width="140" height="79" viewBox="0 0 320 180" role="img" aria-label="The whole photo, shrunk">
+        <polygon points="0,180 320,180 210,44 110,44" fill="#4a4a4a"/>
+        <path d="M 70 180 Q 130 108 148 44" fill="none" stroke="#ffff00" stroke-width="8" stroke-linecap="round"/>
+        <path d="M 250 180 Q 190 108 172 44" fill="none" stroke="#ffff00" stroke-width="8" stroke-linecap="round"/>
+        <polygon points="48,180 272,180 240,158 80,158" fill="#141414"/>
+      </svg>
+      <figcaption>The thirteenth look. The whole road, small.</figcaption>
+    </figure>
+  </div>
+
+  <p>More tiles keep the lane paint thick enough to see, and they cost more memory. These photos only land on eight counts. At 29 and 41, the card trains one photo at a time.</p>
+  <p class="counts"><b>1</b> · 5 · 7 · <b>13</b> · 16 · 25 · 29 · <b>41</b></p>
+
+  <h3>Each tile is a grid of patches</h3>
+  <p>The eyes do not eat a tile as one blob. A tile is 384 pixels on the long side. A small convolution cuts it into patches of 14 by 14 pixels. 384 ÷ 14 lands on 27, so the tile becomes a 27 by 27 grid, 729 patches. Each patch is turned into a list of 1,152 numbers. A table of 729 position lists, one per grid cell, is added so the eyes know which patch was where.</p>
+  <p>Those 729 lists then go through their own stack of 27 layers. It is the same idea as the language layer: attention, then a wide step. The wide step here is simpler. It expands 1,152 numbers to 4,304 and brings them straight back. The language wide step was the gated one, 2,048 to 8,192 and back.</p>
+
+  <h3>Packing makes them the same length as a word</h3>
+  <p>729 lists of 1,152 is a lot to drop into the sentence. Neighboring patches are packed in 3 by 3 blocks. Nine lists of 1,152 become one list of 10,368, and 27 ÷ 3 = 9, so the grid goes from 27 by 27 to 9 by 9. That is 81 lists per tile. One linear table then maps each 10,368-list down to 2,048. That is the connector. After it, a tile is 81 rows of the same length as a word.</p>
+  <p class="nums">Usual setting, 13 tiles: <b>13 × 81 = 1,053</b> image rows, plus the words of the prompt, in one sequence.</p>
+  <p>The prompt is the sentence “Generate a list of splines for all road and taxi lines in this image.” The image rows replace the picture inside that sentence. From the first language layer on, a row that came from a patch and a row that came from a word are the same kind of object. The 24 language layers, and the next-token choice, do not have a separate path for the photo.</p>
+  <p>Each answer line the model writes is one lane, <b>y_top y_bottom x1 x2 x3 x4</b>, as fractions of the photo. Training scores only those answer tokens. The prompt tokens are marked so their scores do not move the tables.</p>
+
+  <h2>5. LoRA edits four tables, and leaves the rest frozen</h2>
+  <p>Full training, which is the default here, nudges every number in the eyes, the connector, and the 24 language layers. That is about 2.2 billion numbers. LoRA is the other switch. It freezes those tables and learns a correction that is added on when a table is used.</p>
+  <p>The correction is forced through 16 numbers. A table that is 2,048 by 2,048 holds about 4.2 million numbers. The two strips that stand in for a change are 2,048 by 16 and 16 by 2,048, which is 65,536 numbers. The strips are multiplied to act like a full-sized table, then doubled (the scale is 32 ÷ 16) and added onto the frozen result. During training, a random 5% of that correction is switched off, so the strips cannot memorize one photo.</p>
+
+  <div class="stage">
+    <svg id="scene" viewBox="0 0 860 460" role="img" aria-labelledby="scene-title scene-desc">
+      <title id="scene-title">Frozen weight table plus a LoRA correction</title>
+      <desc id="scene-desc">A list of numbers is multiplied by a large table. Full training recolors every cell. LoRA leaves the table frozen and adds a correction that passes through 16 numbers.</desc>
+      <g id="matrix"></g>
+      <path d="M160 52 H150 V226 H160" fill="none" stroke="#58c4dd" stroke-width="1.5"/>
+      <path d="M450 52 H460 V226 H450" fill="none" stroke="#58c4dd" stroke-width="1.5"/>
+
+      <text x="36" y="36">the list so far</text>
+      <text x="168" y="36" class="blue">Q, K, V, or O</text>
+      <text x="500" y="36" class="blue">answer</text>
+
+      <path d="M66 137 H150" stroke="#888" stroke-width="1.5" fill="none"/>
+      <polygon points="150,137 140,132 140,142" fill="#888"/>
+      <path d="M468 137 H492" stroke="#58c4dd" stroke-width="1.5" fill="none"/>
+      <polygon points="492,137 482,132 482,142" fill="#58c4dd"/>
+
+      <g class="lock">
+        <rect x="168" y="250" width="70" height="22" fill="#000"/>
+        <text x="168" y="268" class="blue">frozen</text>
+      </g>
+
+      <g class="lora">
+        <text x="36" y="312">correction</text>
+        <rect x="168" y="332" width="150" height="18" class="strip-a"/>
+        <text x="168" y="372" class="em">shrink</text>
+        <circle cx="352" cy="341" r="16" fill="#000" stroke="#ffff00" stroke-width="1.5"/>
+        <text x="352" y="346" text-anchor="middle" class="em">16</text>
+        <rect x="392" y="304" width="18" height="74" class="strip-b"/>
+        <text x="418" y="348" class="green">stretch</text>
+        <path d="M411 304 V248 H511 V230" fill="none" stroke="#ffff00" stroke-width="1.5"/>
+        <polygon points="511,222 506,232 516,232" fill="#ffff00"/>
+        <circle cx="470" cy="248" r="12" fill="#000" stroke="#ffff00" stroke-width="1.5"/>
+        <text x="470" y="253" text-anchor="middle" class="em">+</text>
+      </g>
+      <circle class="bead" r="4" fill="#ffff00"/>
+    </svg>
+    <p>The blue grid is one of those four tables, frozen. The yellow bar shrinks the list to 16 numbers, the green bar stretches it back, and the sum is added onto the original answer. The dot is only there to show that path.</p>
+  </div>
+
+  <h2>Where the strips are pinned</h2>
+  <p>There are 24 language layers and 4 tables in each, so 96 tables get a pair of strips. 96 × 65,536 is about 6.3 million numbers, a few in every thousand of the full model. The same kind of Q, K, V, and O tables exist in the 27 vision layers. Their names contain “vision,” and the training code skips any table whose name does. The eyes stay as pretrained. The connector stays as pretrained. Only the talking half learns the lane lines.</p>
+  <div class="halves">
+    <figure>
+      <div class="mini lock" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+      <span class="name">Eyes, frozen</span>
+      <figcaption>Looks at the tiles. No strips on this half.</figcaption>
+    </figure>
+    <figure>
+      <div class="qkv">
+        <div><div class="mini talk" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><span class="name">q</span></div>
+        <div><div class="mini talk" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><span class="name">k</span></div>
+        <div><div class="mini talk" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><span class="name">v</span></div>
+        <div><div class="mini talk" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><span class="name">o</span></div>
+      </div>
+      <figcaption>Talking half. The yellow line is the correction on each of those four tables.</figcaption>
+    </figure>
+  </div>
+
+  <h2>The path, once through</h2>
+  <p>A token is a row of 2,048 numbers, taken from a table of 49,280 rows. Twenty-four layers mix those rows with attention and then rewrite each row in a wider table. The photo is cut into 384-pixel tiles, each tile into a 27 by 27 grid of patches, run through 27 smaller layers, packed 3 by 3, and mapped down to 2,048 so it can sit in the same sequence. The last row picks the next token, and the tokens we train are the lane lines. Full training nudges every table. LoRA freezes them and trains about 6.3 million numbers on Q, K, V, and O in the language layers only.</p>
+</main>
+<script>
+  const ns = "http://www.w3.org/2000/svg";
+  const scene = document.getElementById("scene");
+  const rows = 6;
+  const cols = 10;
+  const size = 22;
+  const gap = 6;
+  const pitch = size + gap;
+  const ox = 168;
+  const oy = 56;
+
+  function cells(parent, cls) {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const rect = document.createElementNS(ns, "rect");
+        rect.setAttribute("x", ox + c * pitch);
+        rect.setAttribute("y", oy + r * pitch);
+        rect.setAttribute("width", size);
+        rect.setAttribute("height", size);
+        rect.setAttribute("class", cls);
+        parent.appendChild(rect);
+      }
+    }
+  }
+  function column(parent, x, cls) {
+    for (let r = 0; r < rows; r++) {
+      const rect = document.createElementNS(ns, "rect");
+      rect.setAttribute("x", x);
+      rect.setAttribute("y", oy + r * pitch);
+      rect.setAttribute("width", size);
+      rect.setAttribute("height", size);
+      rect.setAttribute("class", cls);
+      parent.appendChild(rect);
+    }
+  }
+
+  cells(document.getElementById("matrix"), "cell");
+  column(scene, 36, "vec");
+  column(scene, 500, "out");
+</script>
+</body>
+</html>

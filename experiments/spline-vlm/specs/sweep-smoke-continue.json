@@ -1,0 +1,50 @@
+{
+  "model": {
+    "id": "smolvlm2-2.2b",
+    "revision": "main",
+    "method": "lora",
+    "lora": {
+      "r": 4,
+      "alpha": 8,
+      "dropout": 0.05,
+      "target_suffixes": [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj"
+      ],
+      "vision": false
+    }
+  },
+  "image": {
+    "tiles": 5
+  },
+  "data": {
+    "train_percent": 1,
+    "tune_loss_photos": 8,
+    "tune_cost_photos": 8
+  },
+  "train": {
+    "seed": 0,
+    "epochs": 0.2,
+    "max_steps": -1,
+    "learning_rate": 0.0001,
+    "lr_scheduler": "cosine",
+    "warmup_fraction": 0.03,
+    "weight_decay": 0.0,
+    "max_grad_norm": 1.0,
+    "batch_size": 2,
+    "grad_accum": 4,
+    "eval_batch_size": 2,
+    "eval_steps": 10,
+    "grad_checkpointing": false,
+    "workers": 2,
+    "save_every": 10,
+    "init_from": "smolvlm2-2.2b-instruct-lora-r4a8-d1-t5-f0e59c16"
+  },
+  "score": {
+    "tune_photos": 8,
+    "test_photos": 8,
+    "batch_size": 8
+  }
+}

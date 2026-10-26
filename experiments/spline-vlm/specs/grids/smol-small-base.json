@@ -1,0 +1,27 @@
+{
+  "name": "smol-small-base",
+  "base": {
+    "model": {
+      "id": "HuggingFaceTB/SmolVLM2-256M-Video-Instruct",
+      "revision": "main",
+      "method": "base",
+      "lora": null
+    },
+    "image": {
+      "tiles": 5
+    },
+    "data": null,
+    "train": null,
+    "score": {
+      "tune_photos": 500,
+      "test_photos": 1000,
+      "batch_size": 32
+    }
+  },
+  "vary": {
+    "model.id": [
+      "HuggingFaceTB/SmolVLM2-256M-Video-Instruct",
+      "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "model": {
+    "id": "qwen3-vl-8b",
+    "revision": "main",
+    "method": "base",
+    "lora": null
+  },
+  "image": {
+    "tiles": null
+  },
+  "data": null,
+  "train": null,
+  "score": {
+    "tune_photos": 500,
+    "test_photos": 1000,
+    "batch_size": 8
+  }
+}
