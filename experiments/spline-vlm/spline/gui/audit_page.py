@@ -143,8 +143,6 @@ class AuditPage(ttk.Frame):
         self.refresh_models()
         self._phase("idle", "Pick a model.")
 
-    # ----- controls -----
-
     def _model_box(self, parent) -> None:
         box = ttk.LabelFrame(parent, text="Model", padding=4)
         box.pack(fill="x")
@@ -201,8 +199,6 @@ class AuditPage(ttk.Frame):
                     row=place // 3, column=place % 3, sticky="w", padx=(0, 10)
                 )
                 self.layers[side][key] = var
-
-    # ----- models -----
 
     def refresh_models(self) -> None:
         """Fill the model list: no model, each base model, then every trained run."""
@@ -396,8 +392,6 @@ class AuditPage(ttk.Frame):
         self._phase("answer", f"Answering {Path(path).name}")
         self.app.worker.submit(Job(f"answer {Path(path).name}", work, done, self._failed))
 
-    # ----- photos -----
-
     def _step(self, delta: int) -> None:
         self.index.set(max(0, self.index.get() + delta))
         self.show_split_photo()
@@ -453,8 +447,6 @@ class AuditPage(ttk.Frame):
             batch = stored["header"].get("batch_size")
             self.answer = (stored["raw"], f"stored in {stored['file']} (batch {batch})")
             self.raw.insert("1.0", stored["raw"] + (CUT if stored["truncated"] else ""))
-
-    # ----- drawing -----
 
     def _membership(self) -> list[tuple[str, str]]:
         """Lines for the notes box, each with a tag: "warn", "caution", or ""."""

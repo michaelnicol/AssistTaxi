@@ -1,4 +1,4 @@
-"""CBEM ground-truth edges. Caller: detect. Owns hand contour plus auto-Canny. Must not open files."""
+"""CBEM ground-truth edges from a hand-drawn contour plus auto-Canny."""
 
 from dataclasses import dataclass
 
@@ -18,7 +18,6 @@ def _odd(ksize: int) -> int:
 
 
 def run_cbem(image: np.ndarray, polygon: list[tuple[int, int]], params: CbemParams):
-    """Caller: propagate. Owns one CBEM frame. Must not open files."""
     height, width = image.shape[:2]
     roi = np.zeros((height, width), dtype=np.uint8)
     cv2.fillPoly(roi, [np.array(polygon, dtype=np.int32)], 255)

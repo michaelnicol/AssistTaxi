@@ -1,4 +1,4 @@
-"""Process log in the SkyscrapeBackend line format. Caller: GUI. Owns labeler.log. Must not write the dataset or secrets."""
+"""labeler.log, written in the SkyscrapeBackend line format."""
 
 import os
 import sys
@@ -30,7 +30,7 @@ class Log:
         self._reported = False
 
     def write(self, level: str, code: str, fields: str = "") -> None:
-        """Caller: GUI. Owns one append. Must not throw."""
+        """Append one line. Never raises, so logging cannot crash the GUI."""
         with self._lock:
             if _rank(level) < _rank(self.floor):
                 return

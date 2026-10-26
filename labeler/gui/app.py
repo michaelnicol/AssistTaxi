@@ -1,4 +1,4 @@
-"""Side-by-side window. Caller: __main__. Owns widgets. Must not open frames or write labels."""
+"""Side-by-side labeling window."""
 
 import time
 import tkinter as tk

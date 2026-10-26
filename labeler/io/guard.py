@@ -1,4 +1,4 @@
-"""Clone-path check. Caller: labels and log. Owns the write ban. Must not read or write."""
+"""Refuse writes that would land inside the AssistTaxi clone."""
 
 from pathlib import Path
 

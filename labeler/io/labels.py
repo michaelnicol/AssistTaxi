@@ -1,4 +1,4 @@
-"""Read and write x y label files. Caller: Session. Owns the text format. Must not choose a detector or open the log."""
+"""Read and write label files, one "x y" point per line."""
 
 from pathlib import Path
 

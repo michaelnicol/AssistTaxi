@@ -1,4 +1,4 @@
-"""CDLEM one-frame detector. Caller: detect. Owns contour, Canny, Hough, RDP. Must not open files."""
+"""CDLEM detector: contours, Canny, Hough lines, and RDP simplification on one frame."""
 
 from dataclasses import dataclass
 
@@ -31,7 +31,6 @@ def _odd(ksize: int) -> int:
 
 
 def run_cdlem(image: np.ndarray, polygon: list[tuple[int, int]], params: CdlemParams):
-    """Caller: propagate. Owns one CDLEM frame. Must not open files."""
     height, width = image.shape[:2]
     roi = np.zeros((height, width), dtype=np.uint8)
     cv2.fillPoly(roi, [np.array(polygon, dtype=np.int32)], 255)

@@ -1,4 +1,4 @@
-"""Pick a detector for one frame. Caller: Session. Owns method dispatch. Must not open files or draw."""
+"""Run the chosen detector on one frame."""
 
 import numpy as np
 

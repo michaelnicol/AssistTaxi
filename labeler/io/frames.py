@@ -1,4 +1,4 @@
-"""Read frames. Caller: Session. Owns image decode. Must not write."""
+"""Read and decode video frames."""
 
 from pathlib import Path
 

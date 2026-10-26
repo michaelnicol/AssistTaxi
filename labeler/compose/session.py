@@ -1,4 +1,4 @@
-"""One labeling session. Caller: GUI. Owns frame index work and save path. Must not draw widgets."""
+"""One labeling session: the current frame, its labels, and where they are saved."""
 
 from dataclasses import dataclass
 from pathlib import Path

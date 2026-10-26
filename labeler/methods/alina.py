@@ -1,4 +1,4 @@
-"""ALINA one-frame detector. Caller: detect. Owns warp, HSV, CIRCLEDAT. Must not open files."""
+"""ALINA detector: perspective warp, HSV mask, and CIRCLEDAT on one frame."""
 
 from dataclasses import dataclass
 
@@ -83,7 +83,6 @@ def _coords_from_mask(mask: np.ndarray) -> np.ndarray:
 
 
 def run_alina(image: np.ndarray, quad: list[tuple[int, int]], params: AlinaParams):
-    """Caller: propagate. Owns one ALINA frame. Must not open files."""
     height, width = image.shape[:2]
     source = np.array(quad, dtype=np.float32).reshape(4, 2)
     destination = params.destination()
