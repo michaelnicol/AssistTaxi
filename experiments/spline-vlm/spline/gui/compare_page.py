@@ -54,16 +54,16 @@ def _score(split: str, *keys: str):
 
 # Metrics: name -> (reader, which split's score it comes from, or None).
 METRICS = {
-    "tune cost median px": (_score("tune", "cost", "median_px"), "tune"),
-    "tune cost mean px": (_score("tune", "cost", "mean_px"), "tune"),
+    "tune cost median": (_score("tune", "cost", "median_px"), "tune"),
+    "tune cost mean": (_score("tune", "cost", "mean_px"), "tune"),
     "tune ≤10px %": (_score("tune", "cost", "within_10_pct"), "tune"),
     "tune precision %": (_score("tune", "precision_pct"), "tune"),
     "tune recall %": (_score("tune", "recall_pct"), "tune"),
     "tune F %": (_score("tune", "f_pct"), "tune"),
     "tune readable %": (_score("tune", "readable_pct"), "tune"),
-    "test cost median px": (_score("test", "cost", "median_px"), "test"),
+    "test cost median": (_score("test", "cost", "median_px"), "test"),
     "test F %": (_score("test", "f_pct"), "test"),
-    "best tune cost px": (lambda run: (run["train"] or {}).get("best_tune_cost_px"), None),
+    "best tune cost": (lambda run: (run["train"] or {}).get("best_tune_cost_px"), None),
     "best tune loss": (lambda run: (run["train"] or {}).get("best_tune_loss"), None),
     "train minutes": (lambda run: round(run["train"]["runtime_s"] / 60, 1) if run["train"] else None, None),
 }
@@ -74,7 +74,7 @@ class ComparePage(ttk.Frame):
         super().__init__(parent, padding=6)
         side = ttk.Frame(self)
         side.pack(side="left", fill="y")
-        self.metric = tk.StringVar(value="tune cost median px")
+        self.metric = tk.StringVar(value="tune cost median")
         self.x = tk.StringVar(value="tiles")
         self.colour = tk.StringVar(value="LoRA r")
         for title, var, values in (
@@ -156,7 +156,7 @@ class ComparePage(ttk.Frame):
                 if costs:
                     self.costs.plot(*zip(*costs, strict=True), "s--", markersize=3, color=line.get_color())
         self.curves.set(xlabel="update", ylabel="tune loss (solid)", title="tune loss and tune cost while training")
-        self.costs.set(ylabel="tune cost px (dashed)")
+        self.costs.set(ylabel=_cost_axis(runs))
         # clear() moves a twin axis back to the left side.
         self.costs.yaxis.tick_right()
         self.costs.yaxis.set_label_position("right")
@@ -195,4 +195,17 @@ def _comparable(runs: list[dict], split: str | None) -> str:
         problems.append("different decode settings (batch size changes answers)")
     if len(splits) > 1:
         problems.append("different split.json files")
+    formulas = {score["judge"]["cost"] for score in scores if score.get("judge")}
+    if len(formulas) > 1:
+        problems.append("different cost formulas")
     return f"Not comparable: {', '.join(problems)}." if problems else ""
+
+
+def _cost_axis(runs: list[dict]) -> str:
+    """The dashed-axis label: px² when every chosen run paints strokes, px when none do."""
+    strokes = {bool(run["config"]["judge"].get("stroke_px")) for run in runs}
+    if strokes == {True}:
+        return "tune cost px² (dashed)"
+    if strokes == {False}:
+        return "tune cost px (dashed)"
+    return "tune cost (dashed)"

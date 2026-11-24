@@ -15,8 +15,8 @@ COLUMNS = (
     ("data", "Train %", 60),
     ("updates", "Updates", 70),
     ("loss", "Tune loss", 80),
-    ("tune", "Tune cost px", 85),
-    ("test", "Test cost px", 85),
+    ("tune", "Tune cost", 85),
+    ("test", "Test cost", 85),
     ("within", "Test ≤10px %", 90),
     ("f", "Test F %", 70),
 )

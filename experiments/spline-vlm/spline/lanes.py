@@ -2,14 +2,20 @@
 
 A lane is a polyline written as one line of text, ``x1 y1 x2 y2 ... xk yk``, points
 from top to bottom. An answer is any number of lanes, one per line. To judge an
-answer, every predicted lane is pooled into one point set and every gold lane into
-another, so lanes are never matched one to one (see :func:`overlap`).
+answer, every predicted lane is pooled with the others and every gold lane with
+the others, so lanes are never matched one to one (see :func:`overlap`).
+
+A judge with ``stroke_px`` set paints both pools that many pixels thick and
+takes the mean squared distance from each painted model pixel to the nearest
+painted label pixel. A judge with ``stroke_px`` null keeps the older capped
+two-way distance between centerline samples.
 """
 
 import itertools
 from typing import NamedTuple
 
 import numpy as np
+from PIL import Image, ImageDraw
 
 from spline.config import JudgeSettings
 
@@ -18,16 +24,24 @@ DEFAULT_JUDGE = JudgeSettings(
     step_px=2.0,
     radius_px=15.0,
     tau_px=50.0,
-    distance="euclidean px from each sampled point to the nearest sampled point of the other pooled set",
+    stroke_px=3.0,
+    distance="euclidean px from each painted model pixel to the nearest painted gold pixel",
     cost=(
-        "truncated symmetric chamfer: the mean of both directions, each distance capped at tau_px; "
-        "an unreadable or empty answer costs tau_px"
+        "mean squared distance from each painted model pixel to the nearest painted gold pixel; "
+        "both strokes are stroke_px wide; an unreadable or empty answer costs tau_px squared"
     ),
     why={
         "rdp_px": "gold lanes keep every bend larger than this, and straight runs shrink to their two ends",
-        "step_px": "measuring to the nearest sample instead of the true line adds at most half this",
-        "radius_px": "half the 30 px lane width of the official CULane and LLAMAS metric",
-        "tau_px": "caps any one point, so one wild line cannot dominate a photo's cost",
+        "step_px": (
+            "painted pixels are kept where both coordinates fall on this grid, "
+            "so the mean square uses fewer pixels"
+        ),
+        "radius_px": (
+            "a painted model pixel is a hit at most this far from a painted label pixel, "
+            "half the 30 px CULane and LLAMAS lane width"
+        ),
+        "tau_px": "an empty or unreadable answer costs the square of this",
+        "stroke_px": "both strokes are this thick, a small odd width that sits on the center of the lane",
     },
 )
 # Distance-matrix cells computed at once (about 32 MB), so a very long answer cannot exhaust memory.
@@ -153,12 +167,70 @@ def nearest(points: np.ndarray, others: np.ndarray) -> np.ndarray:
     )
 
 
-def overlap(pred: list[np.ndarray], gold: list[np.ndarray], judge: JudgeSettings) -> Overlap:
-    """Pool all predicted lanes and all gold lanes, and compare the two point sets.
+def paint_pixels(lanes: list[np.ndarray], width: int, height: int, stroke_px: float) -> np.ndarray:
+    """Pixel centers of the lanes drawn ``stroke_px`` thick, as an (n, 2) array of x y.
 
-    The cost is the mean of both nearest-point directions, each distance capped at
-    ``tau_px``. Precision and recall are the shares of points within ``radius_px``.
+    Pixels outside the photo are dropped. An empty list of lanes gives an empty array.
     """
+    mask = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(mask)
+    thick = max(1, int(round(stroke_px)))
+    for lane in lanes:
+        if len(lane) < 2:
+            continue
+        draw.line([tuple(int(value) for value in point) for point in lane], fill=1, width=thick)
+    ys, xs = np.nonzero(np.asarray(mask))
+    if len(xs) == 0:
+        return np.zeros((0, 2))
+    return np.stack((xs, ys), axis=1).astype(float)
+
+
+def _on_grid(points: np.ndarray, step_px: float) -> np.ndarray:
+    """Pixels whose x and y both fall on the ``step_px`` grid. The full set is kept if the grid hits none."""
+    step = max(1, int(round(step_px)))
+    if step <= 1 or len(points) == 0:
+        return points
+    coords = np.rint(points).astype(int)
+    chosen = points[(coords[:, 0] % step == 0) & (coords[:, 1] % step == 0)]
+    return chosen if len(chosen) else points
+
+
+def stroke_points(lanes: list[np.ndarray], width: int, height: int, judge: JudgeSettings) -> np.ndarray:
+    """The painted pixels the stroke cost averages, on the judge's sample grid."""
+    return _on_grid(paint_pixels(lanes, width, height, judge.stroke_px), judge.step_px)
+
+
+def _stroke_overlap(
+    pred: list[np.ndarray], gold: list[np.ndarray], judge: JudgeSettings, width: int, height: int
+) -> Overlap:
+    """Mean squared distance from each sampled model pixel to the nearest sampled label pixel."""
+    penalty = judge.tau_px**2
+    if not pred or not gold:
+        return Overlap(penalty, 0.0, 0.0)
+    painted_pred = stroke_points(pred, width, height, judge)
+    painted_gold = stroke_points(gold, width, height, judge)
+    if len(painted_pred) == 0 or len(painted_gold) == 0:
+        return Overlap(penalty, 0.0, 0.0)
+    to_gold = nearest(painted_pred, painted_gold)
+    to_pred = nearest(painted_gold, painted_pred)
+    return Overlap(
+        float(np.square(to_gold).mean()),
+        float((to_gold <= judge.radius_px).mean()),
+        float((to_pred <= judge.radius_px).mean()),
+    )
+
+
+def overlap(pred: list[np.ndarray], gold: list[np.ndarray], judge: JudgeSettings, width: int, height: int) -> Overlap:
+    """Pool all predicted lanes and all gold lanes, and compare the two sets.
+
+    With ``stroke_px`` set, both pools are painted that thick and the cost is the
+    mean squared distance from each model pixel to the nearest label pixel. Without
+    it, the cost is the mean of both nearest-point directions along the centerlines,
+    each distance capped at ``tau_px``. Precision and recall are the shares of
+    points within ``radius_px``.
+    """
+    if judge.stroke_px:
+        return _stroke_overlap(pred, gold, judge, width, height)
     if not pred or not gold:
         return Overlap(judge.tau_px, 0.0, 0.0)
     p = np.concatenate([densify(lane, judge.step_px) for lane in pred])

@@ -44,6 +44,7 @@ def describe(run: dict) -> str:
     model, image, data, train = config["model"], config["image"], config["data"], config["train"]
     lora = model["lora"]
     base = model["method"] == "base"
+    unit = "px²" if config["judge"].get("stroke_px") else "px"
     lines = [friendly_name(run), run["name"], f"State: {state_of(run)}", ""]
     if base:
         lines.append(f"Model: {_model_name(model['id'])}, untrained")
@@ -70,7 +71,7 @@ def describe(run: dict) -> str:
         trained = run["train"]
         if trained:
             lines.append(
-                f"Kept: update {trained['best_step']}, tune cost {_num(trained['best_tune_cost_px'])} px, "
+                f"Kept: update {trained['best_step']}, tune cost {_num(trained['best_tune_cost_px'])} {unit}, "
                 f"tune loss {_num(trained['best_tune_loss'])}, took {_hours(trained.get('runtime_s'))}"
             )
             if trained["fallbacks"]:
@@ -83,8 +84,8 @@ def describe(run: dict) -> str:
             continue
         cost = score["cost"]
         lines.append(
-            f"{title} ({score['photos']:,} photos): cost median {_num(cost['median_px'])} px, "
-            f"mean {_num(cost['mean_px'])} px; F {score['f_pct']}% "
+            f"{title} ({score['photos']:,} photos): cost median {_num(cost['median_px'])} {unit}, "
+            f"mean {_num(cost['mean_px'])} {unit}; F {score['f_pct']}% "
             f"(P {score['precision_pct']}%, R {score['recall_pct']}%); "
             f"readable {score['readable_pct']}%, lanes {score['lanes_pred_mean']} vs {score['lanes_gold_mean']}"
         )
@@ -95,6 +96,12 @@ def describe(run: dict) -> str:
 
 
 def _judge_words(judge: dict) -> str:
+    if judge.get("stroke_px"):
+        return (
+            f"Cost: mean squared distance from each painted model pixel to the nearest painted gold pixel, "
+            f"stroke {judge['stroke_px']:g} px, empty answer {judge['tau_px']:g}², "
+            f"hit radius {judge['radius_px']:g} px"
+        )
     return (
         f"Cost: truncated Chamfer, step {judge['step_px']:g} px, cap {judge['tau_px']:g} px, "
         f"hit radius {judge['radius_px']:g} px"

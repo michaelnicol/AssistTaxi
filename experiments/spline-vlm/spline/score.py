@@ -36,7 +36,8 @@ class PhotoScore:
     # Lanes in the answer (0 if unreadable) and in the gold text.
     lanes_pred: int
     lanes_gold: int
-    # Cost L in px, and the shares of predicted and gold points within radius_px (see overlap()).
+    # Cost L, in px for a centerline judge and in px² for a stroke judge.
+    # Precision and recall are the shares of points within radius_px (see overlap()).
     cost_px: float
     prec: float
     rec: float
@@ -46,7 +47,7 @@ def measure(gold_text: str, raw_text: str, width: int, height: int, judge: Judge
     """The per-photo numbers that make up a score. Used by scoring, checkpoint choice, and the GUI audit page."""
     gold = read_lanes(gold_text, width, height) or []
     guess = read_lanes(raw_text, width, height) or []
-    cost_px, prec, rec = overlap(guess, gold, judge)
+    cost_px, prec, rec = overlap(guess, gold, judge, width, height)
     return PhotoScore(
         readable=bool(guess), lanes_pred=len(guess), lanes_gold=len(gold), cost_px=cost_px, prec=prec, rec=rec
     )
@@ -62,8 +63,15 @@ def log_setup(config: RunConfig) -> None:
     log.info("judge: %s", json.dumps(asdict(config.judge)))
 
 
-def stats(costs: list[float]) -> CostStats:
-    """Median, mean, and share within 10 and 25 px, over the per-photo costs of a split."""
+def cost_limits(judge: JudgeSettings) -> tuple[float, float]:
+    """Cutoffs for the within-10 and within-25 shares. Squared when the cost is in px²."""
+    if judge.stroke_px:
+        return 100.0, 625.0
+    return 10.0, 25.0
+
+
+def stats(costs: list[float], within_10: float = 10, within_25: float = 25) -> CostStats:
+    """Median, mean, and share at or under the two cutoffs, over the per-photo costs of a split."""
     if not costs:
         return CostStats(photos=0, median_px=None, mean_px=None, within_10_pct=None, within_25_pct=None)
     values = np.array(costs)
@@ -71,8 +79,8 @@ def stats(costs: list[float]) -> CostStats:
         photos=len(values),
         median_px=round(float(np.median(values)), 2),
         mean_px=round(float(values.mean()), 2),
-        within_10_pct=round(100 * float((values <= 10).mean()), 2),
-        within_25_pct=round(100 * float((values <= 25).mean()), 2),
+        within_10_pct=round(100 * float((values <= within_10).mean()), 2),
+        within_25_pct=round(100 * float((values <= within_25).mean()), 2),
     )
 
 
@@ -243,6 +251,7 @@ def score(config: RunConfig, folder: Path, split_name: str, photos: int, decode:
     n = len(results)
     prec = float(np.mean([one.prec for one in scores]))
     rec = float(np.mean([one.rec for one in scores]))
+    within_10, within_25 = cost_limits(config.judge)
     result = ScoreResult(
         schema_version=SCHEMA_VERSION,
         run=config.name,
@@ -256,7 +265,7 @@ def score(config: RunConfig, folder: Path, split_name: str, photos: int, decode:
         decode=decode,
         readable_pct=round(100 * sum(one.readable for one in scores) / n, 2),
         truncated_pct=round(100 * sum(row["truncated"] for row in results) / n, 2),
-        cost=stats([one.cost_px for one in scores]),
+        cost=stats([one.cost_px for one in scores], within_10, within_25),
         precision_pct=round(100 * prec, 2),
         recall_pct=round(100 * rec, 2),
         f_pct=round(100 * f_score(prec, rec), 2),
@@ -272,8 +281,9 @@ def score(config: RunConfig, folder: Path, split_name: str, photos: int, decode:
     write_once(result_path, dump(asdict(result)))
     progress.finish("done")
     c = result.cost
+    unit = "px²" if config.judge.stroke_px else "px"
     log.info(
-        "%d %s photos, run %s: readable %s%%, cut off %s%%, cost median %s px mean %s px, "
+        "%d %s photos, run %s: readable %s%%, cut off %s%%, cost median %s %s mean %s %s, "
         "within 10 px %s%%, within 25 px %s%%, precision %s%%, recall %s%%, F %s%%",
         n,
         split_name,
@@ -281,7 +291,9 @@ def score(config: RunConfig, folder: Path, split_name: str, photos: int, decode:
         result.readable_pct,
         result.truncated_pct,
         c.median_px,
+        unit,
         c.mean_px,
+        unit,
         c.within_10_pct,
         c.within_25_pct,
         result.precision_pct,

@@ -64,11 +64,12 @@ class CheckLastUpdate(TrainerCallback):
 class LiveStatus(TrainerCallback):
     """Copies each Trainer log entry to the live files and the logs."""
 
-    def __init__(self, folder: Path, total: int) -> None:
+    def __init__(self, folder: Path, total: int, cost_unit: str = "px") -> None:
         self.progress = Progress(folder, "train", total, "updates")
         self.history = folder / "live" / "train.jsonl"
         self.history.parent.mkdir(parents=True, exist_ok=True)
         self.last_info = 0.0
+        self.cost_unit = cost_unit
 
     def on_log(self, args, state, control, logs=None, **kwargs):
         entry = {"step": int(state.global_step), "time": round(time.time(), 1), **(logs or {})}
@@ -77,9 +78,10 @@ class LiveStatus(TrainerCallback):
         log.debug("step %d %s", state.global_step, logs)
         if "eval_tune_cost_px" in entry:
             log.info(
-                "update %d: tune cost %.2f px, precision %.3f, recall %.3f",
+                "update %d: tune cost %.2f %s, precision %.3f, recall %.3f",
                 state.global_step,
                 entry["eval_tune_cost_px"],
+                self.cost_unit,
                 entry["eval_tune_prec"],
                 entry["eval_tune_rec"],
             )
@@ -353,10 +355,11 @@ def train(
     write_once(result_path, dump(asdict(result)))
     shutil.rmtree(folder / "checkpoints", ignore_errors=True)
     log.info(
-        "saved %s: update %s with tune cost %s px, tune loss %s",
+        "saved %s: update %s with tune cost %s %s, tune loss %s",
         saved,
         result.best_step,
         result.best_tune_cost_px,
+        "px²" if config.judge.stroke_px else "px",
         result.best_tune_loss,
     )
 
@@ -376,7 +379,7 @@ def _fit(config, data, processor, folder, workers, checkpointing, decode, start)
     """Run the Trainer to the last update. Returns it and what train.json records about training."""
     spec = config.train
     checkpoints = folder / "checkpoints"
-    live = LiveStatus(folder, spec.updates)
+    live = LiveStatus(folder, spec.updates, "px²" if config.judge.stroke_px else "px")
     fallbacks: list[str] = []
     resume = None
     try:
@@ -535,12 +538,13 @@ def _sweep(config: RunConfig, folder: Path, processor, decode: DecodeSettings, r
                 with history.open("a", encoding="utf-8") as handle:
                     handle.write(json.dumps({"time": round(time.time(), 1), **_sweep_entry(row)}) + "\n")
                 log.info(
-                    "checkpoint %d: tune cost %.2f px, precision %.3f, recall %.3f: %s",
+                    "checkpoint %d: tune cost %.2f %s, precision %.3f, recall %.3f: %s",
                     step,
                     row["tune_cost_px"],
+                    "px²" if config.judge.stroke_px else "px",
                     row["tune_prec"],
                     row["tune_rec"],
-                    "best so far, kept" if row["better"] else f"not better than {prior:.2f} px, deleted",
+                    "best so far, kept" if row["better"] else f"not better than {prior:.2f}, deleted",
                 )
             best = min(state["results"], key=lambda row: row["tune_cost_px"])
             for row in state["results"]:

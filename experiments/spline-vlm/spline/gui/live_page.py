@@ -37,6 +37,12 @@ def ago(seconds: float | None) -> str:
     return f"{seconds} s"
 
 
+def _cost_unit(run: dict | None) -> str:
+    """px² when this run's judge paints strokes, otherwise px."""
+    judge = (run or {}).get("config", {}).get("judge", {})
+    return "px²" if judge.get("stroke_px") else "px"
+
+
 def smooth(values: list[float], weight: float = 0.9) -> list[float]:
     """Exponential moving average, the same smoothing TensorBoard uses."""
     out, last = [], None
@@ -143,6 +149,7 @@ class LivePage(ttk.Frame):
         self.errors.pack(fill="x")
         self.history: History | None = None
         self.names: list[str] = []
+        self.catalog: dict[str, dict] = {}
         self.tick()
 
     def select(self, name: str) -> None:
@@ -178,6 +185,7 @@ class LivePage(ttk.Frame):
 
     def _refresh(self) -> None:
         runs = all_runs(OUTPUT)
+        self.catalog = {run["name"]: run for run in runs}
         names = [run["name"] for run in runs]
         if names != self.names:
             self.names = names
@@ -254,11 +262,12 @@ class LivePage(ttk.Frame):
                 # A label near the edge would otherwise make the layout shrink the axes to fit it.
                 label.set_in_layout(False)
             steps, cost = history.series("eval_tune_cost_px")
+            unit = _cost_unit(self.catalog.get(self.run.get()))
             if steps:
-                self.cost_axes.plot(steps, cost, "s--", color="#a0a", label="tune cost px (right axis)")
+                self.cost_axes.plot(steps, cost, "s--", color="#a0a", label=f"tune cost {unit} (right axis)")
                 best = min(range(len(cost)), key=cost.__getitem__)
                 label = self.cost_axes.annotate(
-                    f"best {cost[best]:.1f} px",
+                    f"best {cost[best]:.1f} {unit}",
                     (steps[best], cost[best]),
                     textcoords="offset points",
                     xytext=(-40, -14),
@@ -270,7 +279,7 @@ class LivePage(ttk.Frame):
             self.grad_axes.plot(steps, grad, color="#838", linewidth=0.8)
         title = self.friendly.get(self.run.get(), self.run.get()) or "no run selected"
         self.loss_axes.set(title=title, xlabel="update", ylabel="loss")
-        self.cost_axes.set(ylabel="tune cost px")
+        self.cost_axes.set(ylabel=f"tune cost {_cost_unit(self.catalog.get(self.run.get()))}")
         # clear() moves a twin axis back to the left side.
         self.cost_axes.yaxis.tick_right()
         self.cost_axes.yaxis.set_label_position("right")

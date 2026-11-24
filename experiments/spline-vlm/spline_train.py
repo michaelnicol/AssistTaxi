@@ -229,8 +229,8 @@ def _report_row(run: dict) -> str:
     cost = test.get("cost") or {}
     return (
         f"{run['name']:58} {run['config']['image']['tiles'] or '-':>5} {lora.get('r', '-'):>4} "
-        f"{lora.get('alpha', '-'):>4} {loss if loss is None else round(loss, 4)!s:>9} {tune!s:>8} "
-        f"{cost.get('median_px')!s:>8} {cost.get('within_10_pct')!s:>10} {test.get('f_pct')!s:>7}"
+        f"{lora.get('alpha', '-'):>4} {loss if loss is None else round(loss, 4)!s:>9} {tune!s:>9} "
+        f"{cost.get('median_px')!s:>9} {cost.get('within_10_pct')!s:>10} {test.get('f_pct')!s:>7}"
     )
 
 
@@ -244,15 +244,18 @@ def report(output: Path) -> None:
         scored = [run["scores"][split] for run in runs if run["scores"][split]]
         sets = {score["photos_sha256"] for score in scored}
         decodes = {json.dumps(score["decode"], sort_keys=True) for score in scored}
+        formulas = {score["judge"]["cost"] for score in scored if score.get("judge")}
         if len(sets) > 1 or len(decodes) > 1:
             log.warning("%s scores use different photos or decode settings, so they are not comparable", split)
+        if len(formulas) > 1:
+            log.warning("%s scores use different cost formulas, so a px median is not a px² median", split)
 
     def key(run):
         tune = run["scores"]["tune"]
         return tune["cost"]["median_px"] if tune and tune["cost"]["median_px"] is not None else math.inf
 
     print(
-        f"{'run':58} {'tiles':>5} {'r':>4} {'a':>4} {'tune loss':>9} {'tune px':>8} {'test px':>8} "
+        f"{'run':58} {'tiles':>5} {'r':>4} {'a':>4} {'tune loss':>9} {'tune cost':>9} {'test cost':>9} "
         f"{'test 10px%':>10} {'test F%':>7}"
     )
     trained = [run for run in runs if run["config"]["model"]["method"] != "base"]

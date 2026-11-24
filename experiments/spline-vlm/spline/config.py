@@ -117,13 +117,18 @@ class JudgeSettings:
     step_px: float
     # A point overlaps the other side when it is at most this far from it (precision and recall).
     radius_px: float
-    # Cap on any one point's distance in the cost. Also the cost of an unreadable or empty answer.
+    # Cap on any one point's distance in the older centerline cost. An unreadable or empty
+    # answer costs this, or this squared when stroke_px is set.
     tau_px: float
     # The distance and cost, in words.
     distance: str
     cost: str
     # One sentence per number: why it has this value.
     why: dict[str, str]
+    # Null keeps the capped two-way centerline cost, so a saved run still matches its score.
+    # A number paints both answers this many pixels thick and uses the mean squared distance
+    # from each model pixel to the nearest label pixel.
+    stroke_px: float | None = None
 
 
 @dataclass
@@ -206,6 +211,7 @@ class CostStats:
     median_px: float | None
     mean_px: float | None
     # Percent of photos with cost at most 10 px and at most 25 px.
+    # When the cost is in px² those cutoffs are 100 and 625, so the root is still 10 px and 25 px.
     within_10_pct: float | None
     within_25_pct: float | None
 

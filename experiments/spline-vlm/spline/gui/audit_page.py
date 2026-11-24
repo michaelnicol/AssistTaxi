@@ -2,11 +2,12 @@
 
 The left image shows what the annotators drew (raw LLAMAS marker segments) and
 the gold polylines simplified from them, which are what the model is trained to say.
-The right image shows the predicted polylines over a faint band ``radius_px`` wide
-on each side of the gold lanes. Each predicted point is green when it lies within
-that radius of gold and red when it does not. Below, the cost, precision, and
-recall come from the same function as scoring (:func:`spline.score.measure`),
-with the judge settings of the chosen run.
+The right image shows the predicted polylines over the gold ones. When the run's
+judge sets ``stroke_px``, the gold overlay is that stroke and each painted model
+pixel is green within ``radius_px`` of it and red beyond it. A judge with no
+``stroke_px`` keeps the faint band ``radius_px`` wide and the centerline samples.
+Below, the cost, precision, and recall come from the same function as scoring
+(:func:`spline.score.measure`), with the judge settings of the chosen run.
 
 A photo can come from any split of split.json, or from any file on disk. For a
 LLAMAS photo the label is looked up in labels.zip even if split.json left it out.
@@ -39,7 +40,7 @@ from spline.data import IMAGES, label_for, marker_segments, reference_size
 from spline.gui.gpu import NotYet, room_for
 from spline.gui.names import HoverTip, labels_for, short_name
 from spline.gui.state import SPLITS, Job, answering_runs, run_photos, split, split_place, stored_answers
-from spline.lanes import DEFAULT_JUDGE, densify, nearest, read_lanes, spline_answer
+from spline.lanes import DEFAULT_JUDGE, densify, nearest, read_lanes, spline_answer, stroke_points
 from spline.model import (
     PromptCollator,
     answer_batch,
@@ -502,7 +503,7 @@ class AuditPage(ttk.Frame):
         for side, axes in (("left", self.left), ("right", self.right)):
             on = {key for key, var in self.layers[side].items() if var.get()}
             if "zone" in on and gold:
-                band = band if band is not None else self._band(gold, width, height, judge.radius_px)
+                band = band if band is not None else self._band(gold, width, height, judge)
                 axes.imshow(band, zorder=2)
             if "markers" in on and photo.label:
                 for lane in marker_segments(photo.label):
@@ -514,7 +515,7 @@ class AuditPage(ttk.Frame):
             if "predicted" in on and guess:
                 self._lanes(axes, guess, PREDICTED, "-", "P")
             if "hits" in on and guess and gold:
-                self._overlap_points(axes, guess, gold, judge)
+                self._overlap_points(axes, guess, gold, judge, width, height)
             axes.set_title(self._title(on, guess), fontsize=10)
             self._legend(axes, on, judge)
         self.left.set_xlim(0, width)
@@ -593,7 +594,15 @@ class AuditPage(ttk.Frame):
     def _legend(axes, on: set[str], judge: JudgeSettings) -> None:
         dashed = "--" if {"predicted", "hits"} & on else "-"
         items = {
-            "zone": Patch(color=GOLD, alpha=0.25, label=f"Within {judge.radius_px:g} px"),
+            "zone": Patch(
+                color=GOLD,
+                alpha=0.25,
+                label=(
+                    f"Label stroke {judge.stroke_px:g} px"
+                    if judge.stroke_px
+                    else f"Within {judge.radius_px:g} px"
+                ),
+            ),
             "markers": Line2D([], [], color=MARKER, label="Annotator marks"),
             "labels": Line2D([], [], color=GOLD, linestyle=dashed, label="Label"),
             "predicted": Line2D([], [], color=PREDICTED, label="Prediction"),
@@ -625,9 +634,13 @@ class AuditPage(ttk.Frame):
             return
         judge = self._judge()
         one = measure(self.photo.gold, self.answer[0], self.photo.width, self.photo.height, judge)
-        cost_fill = "#22c55e" if one.cost_px <= 10 else "#f59e0b" if one.cost_px <= 25 else "#ef4444"
+        if judge.stroke_px:
+            near, far, cap, unit = 100, 625, judge.tau_px**2, "px²"
+        else:
+            near, far, cap, unit = 10, 25, judge.tau_px, "px"
+        cost_fill = "#22c55e" if one.cost_px <= near else "#f59e0b" if one.cost_px <= far else "#ef4444"
         rows = [
-            ("cost", one.cost_px / judge.tau_px, f"{one.cost_px:.1f} of {judge.tau_px:g} px", cost_fill),
+            ("cost", one.cost_px / cap, f"{one.cost_px:.1f} of {cap:g} {unit}", cost_fill),
             ("prec", one.prec, f"{100 * one.prec:.0f}% within {judge.radius_px:g} px", "#3b82f6"),
             ("recall", one.rec, f"{100 * one.rec:.0f}% of gold covered", "#3b82f6"),
         ]
@@ -641,19 +654,30 @@ class AuditPage(ttk.Frame):
         canvas.create_text(4, 6 + 3 * 26 + 9, anchor="w", text=lanes, fill="#52525b")
 
     @staticmethod
-    def _band(gold, width: int, height: int, radius_px: float) -> np.ndarray:
-        """An RGBA overlay: every pixel within about radius_px of a gold lane, tinted faintly."""
+    def _band(gold, width: int, height: int, judge: JudgeSettings) -> np.ndarray:
+        """An RGBA overlay of the gold stroke, or of the older radius band when stroke_px is null."""
         band = Image.new("RGBA", (width, height))
         draw = ImageDraw.Draw(band)
+        thick = round(judge.stroke_px) if judge.stroke_px else round(2 * judge.radius_px)
         for lane in gold:
-            draw.line([tuple(point) for point in lane.tolist()], fill=(34, 197, 94, 60), width=round(2 * radius_px))
+            draw.line([tuple(point) for point in lane.tolist()], fill=(34, 197, 94, 60), width=max(1, thick))
         return np.asarray(band)
 
     @staticmethod
-    def _overlap_points(axes, guess, gold, judge: JudgeSettings) -> None:
-        """Predicted sample points, green within radius_px of gold and red beyond it."""
-        points = np.concatenate([densify(lane, judge.step_px) for lane in guess])
-        others = np.concatenate([densify(lane, judge.step_px) for lane in gold])
+    def _overlap_points(axes, guess, gold, judge: JudgeSettings, width: int, height: int) -> None:
+        """Predicted pixels, green within radius_px of gold and red beyond it.
+
+        A stroke judge uses the painted pixels the cost averages. An older judge uses
+        centerline samples.
+        """
+        if judge.stroke_px:
+            points = stroke_points(guess, width, height, judge)
+            others = stroke_points(gold, width, height, judge)
+        else:
+            points = np.concatenate([densify(lane, judge.step_px) for lane in guess])
+            others = np.concatenate([densify(lane, judge.step_px) for lane in gold])
+        if len(points) == 0 or len(others) == 0:
+            return
         near = nearest(points, others) <= judge.radius_px
         axes.scatter(*points[near].T, s=3, color=NEAR, zorder=6)
         axes.scatter(*points[~near].T, s=3, color=FAR, zorder=6)
